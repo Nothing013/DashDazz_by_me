@@ -17,10 +17,18 @@ class TempoTrackerTest {
     fun `median is the middle value not the mean`() {
         val t = TempoTracker()
 
-        t.push(100f)
+        t.push(150f)
         t.push(200f)
         t.push(1200f)
         assertEquals(200f, t.medianMs(), 1e-4f)
+    }
+
+    @Test
+    fun `even count median averages the two middle values`() {
+        val t = TempoTracker()
+        t.push(400f)
+        t.push(600f)
+        assertEquals(500f, t.medianMs(), 1e-4f)
     }
 
     @Test
@@ -31,18 +39,25 @@ class TempoTrackerTest {
     }
 
     @Test
-    fun `spacing above 1000ms is rejected as not a beat`() {
+    fun `spacing above 2000ms is rejected as not a beat`() {
+        val t = TempoTracker()
+        t.push(2500f)
+        assertEquals(0f, t.medianMs(), 1e-4f)
+    }
+
+    @Test
+    fun `slow but regular intervals are accepted for plausibility scoring`() {
         val t = TempoTracker()
         t.push(1500f)
-        assertEquals(0f, t.medianMs(), 1e-4f)
+        assertEquals(1500f, t.medianMs(), 1e-4f)
     }
 
     @Test
     fun `boundaries are inclusive`() {
         val low = TempoTracker().apply { push(150f) }
-        val high = TempoTracker().apply { push(1000f) }
+        val high = TempoTracker().apply { push(2000f) }
         assertEquals(150f, low.medianMs(), 1e-4f)
-        assertEquals(1000f, high.medianMs(), 1e-4f)
+        assertEquals(2000f, high.medianMs(), 1e-4f)
     }
 
     @Test

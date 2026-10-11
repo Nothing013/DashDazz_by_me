@@ -26,6 +26,12 @@ class DashDazzNotificationListener : NotificationListenerService() {
     @Volatile
     private var mediaWasPlaying = false
 
+    @Volatile
+    private var mediaReclaimJob: kotlinx.coroutines.Job? = null
+
+    @Volatile
+    private var lastOffResetMs = 0L
+
     private val mediaSessionListener = object : MediaSessionManager.OnActiveSessionsChangedListener {
         override fun onActiveSessionsChanged(controllers: List<MediaController>?) {
             handleMediaSessionChange(controllers)
@@ -41,7 +47,8 @@ class DashDazzNotificationListener : NotificationListenerService() {
         if (anyPlaying && !mediaWasPlaying) {
 
             Log.d(TAG, "Media playback started — scheduling recurring scene reclaims")
-            listenerScope.launch {
+            mediaReclaimJob?.cancel()
+            mediaReclaimJob = listenerScope.launch {
 
                 val schedule = listOf(500L, 1500L, 3000L, 5000L, 8000L)
                 for (waitMs in schedule) {
@@ -100,16 +107,34 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
         if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
         if ((notification.flags and Notification.FLAG_NO_CLEAR) != 0) return
+        if (!sbn.isClearable) return
+
+        val allowedApps = Prefs.getNotifApps(this)
+        if (allowedApps.isNotEmpty() && sbn.packageName !in allowedApps) return
+
+        val extras = notification.extras
+        if (extras != null) {
+            if (extras.containsKey(Notification.EXTRA_PROGRESS) ||
+                extras.containsKey(Notification.EXTRA_PROGRESS_MAX)
+            ) {
+                return
+            }
+        }
+        if ((sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+        when (notification.category) {
+            Notification.CATEGORY_PROGRESS,
+            Notification.CATEGORY_SERVICE,
+            Notification.CATEGORY_SYSTEM,
+            Notification.CATEGORY_TRANSPORT -> return
+        }
 
         val notifMode = Prefs.getNotificationMode(this)
         when (notifMode) {
             Prefs.NOTIF_MODE_BLINK -> {
 
-                val color = if (notification.color != 0) {
-                    notification.color
-                } else {
-                    Prefs.getColor(this)
-                }
+                val raw = if (notification.color != 0) notification.color else Prefs.getColor(this)
+                val color = Palettes.sanitize(raw)
+                if (color == 0) return
 
                 Log.d(TAG, "Notification received from ${sbn.packageName}, pulsing ring with color: $color")
                 DashDazzService.pulseNotification(this, color)
@@ -122,9 +147,13 @@ class DashDazzNotificationListener : NotificationListenerService() {
             }
             else -> {
 
+                val now = System.currentTimeMillis()
+                if (now - lastOffResetMs < 10_000L) return
+                lastOffResetMs = now
+
                 listenerScope.launch {
                     kotlinx.coroutines.delay(3500)
-                    LightsBridge.resetScene()
+                    if (DashDazzService.isRunning) LightsBridge.resetScene()
                 }
             }
         }
@@ -133,9 +162,10 @@ class DashDazzNotificationListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
 
+        if (!DashDazzService.isRunning) return
         listenerScope.launch {
             kotlinx.coroutines.delay(500)
-            LightsBridge.resetScene()
+            if (DashDazzService.isRunning) LightsBridge.resetScene()
         }
     }
 
@@ -144,6 +174,8 @@ class DashDazzNotificationListener : NotificationListenerService() {
             val msm = getSystemService(MediaSessionManager::class.java)
             msm?.removeOnActiveSessionsChangedListener(mediaSessionListener)
         } catch (_: Throwable) {}
+        mediaReclaimJob?.cancel()
+        mediaReclaimJob = null
         listenerScope.cancel()
         super.onDestroy()
     }
@@ -156,8 +188,13 @@ class DashDazzNotificationListener : NotificationListenerService() {
                 context.contentResolver,
                 "enabled_notification_listeners"
             ) ?: return false
-            val myComponent = ComponentName(context, DashDazzNotificationListener::class.java).flattenToString()
-            return enabledListeners.contains(myComponent)
+
+            val mine = ComponentName(context, DashDazzNotificationListener::class.java)
+            return enabledListeners.split(":").any { entry ->
+                runCatching {
+                    ComponentName.unflattenFromString(entry) == mine
+                }.getOrDefault(false)
+            }
         }
 
         fun openNotificationAccessSettings(context: Context) {

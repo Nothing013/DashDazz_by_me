@@ -9,23 +9,27 @@ import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
 @RequiresApi(Build.VERSION_CODES.N)
 class DashDazzTileService : TileService() {
 
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var observeJob: Job? = null
+    @Volatile
+    private var lastClickMs = 0L
 
     override fun onStartListening() {
         super.onStartListening()
-        updateTileState(DashDazzService.stateFlow.value.isRunning)
+        updateTileState(DashDazzService.stateFlow.value)
 
         observeJob?.cancel()
         observeJob = DashDazzService.stateFlow
             .onEach { state ->
-                updateTileState(state.isRunning)
+                updateTileState(state)
             }
             .launchIn(scope)
     }
@@ -35,15 +39,38 @@ class DashDazzTileService : TileService() {
         super.onStopListening()
     }
 
+    override fun onDestroy() {
+        observeJob?.cancel()
+        scope.cancel()
+        super.onDestroy()
+    }
+
     override fun onClick() {
         super.onClick()
 
-        if (!LightsBridge.isShizukuAvailable() || !LightsBridge.hasShizukuPermission()) {
+        val now = System.currentTimeMillis()
+        if (now - lastClickMs < 800L) return
+        lastClickMs = now
+
+        val canRun = LightsBridge.isRootAvailable() ||
+                (LightsBridge.isShizukuAvailable() && LightsBridge.hasShizukuPermission())
+        if (!canRun) {
             val intent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             @Suppress("DEPRECATION")
-            startActivityAndCollapse(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && isLocked) {
+                    unlockAndRun { startActivityAndCollapse(intent) }
+                } else {
+                    startActivityAndCollapse(intent)
+                }
+            } catch (_: Throwable) {
+                try {
+                    startActivity(intent)
+                } catch (_: Throwable) {
+                }
+            }
             return
         }
 
@@ -54,19 +81,46 @@ class DashDazzTileService : TileService() {
         }
     }
 
-    private fun updateTileState(running: Boolean) {
+    private var lastSubtitle: String? = null
+
+    private fun updateTileState(state: DashDazzState) {
+        val subtitle = describeState(state)
+        if (lastSubtitle == subtitle && qsTile != null) {
+            return
+        }
+        lastSubtitle = subtitle
         val tile = qsTile ?: return
 
-        tile.state = if (running) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        tile.state = if (state.isRunning) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = getString(R.string.qs_tile_label)
         tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_camera_ring)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = if (running) {
-                getString(R.string.status_service_running)
-            } else {
-                getString(R.string.status_service_stopped)
-            }
+            tile.subtitle = subtitle
         }
         tile.updateTile()
+    }
+
+    private fun describeState(state: DashDazzState): String {
+        if (!state.isRunning) return getString(R.string.status_service_stopped)
+        if (state.isScreenPaused) return getString(R.string.notification_paused)
+        val mode = when (state.mode) {
+            DashDazzService.MODE_BREATHE -> getString(R.string.mode_breathe)
+            DashDazzService.MODE_SOLID -> getString(R.string.mode_solid)
+            DashDazzService.MODE_DUAL -> getString(R.string.mode_dual)
+            else -> getString(R.string.mode_rainbow)
+        }
+        val detail = if (state.mode == DashDazzService.MODE_DUAL) {
+            when (state.dualStyle) {
+                DashDazzService.DUAL_SPIN -> getString(R.string.dual_spin)
+                DashDazzService.DUAL_POLICE -> getString(R.string.dual_police)
+                DashDazzService.DUAL_ALTERNATE -> getString(R.string.dual_alternate)
+                DashDazzService.DUAL_RAINBOW_DUO -> getString(R.string.dual_rainbow_duo)
+                DashDazzService.DUAL_BEAT_RAINBOW -> getString(R.string.dual_beat_rainbow)
+                DashDazzService.DUAL_SPLIT_BEAT -> getString(R.string.dual_split_beat)
+                else -> getString(R.string.dual_hardware_split)
+            }
+        } else null
+        val audio = if (state.audioReactive) getString(R.string.notif_audio_suffix) else ""
+        return mode + (detail?.let { " $it" } ?: "") + audio
     }
 }

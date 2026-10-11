@@ -10,7 +10,9 @@ import android.util.Log
 import java.util.Arrays
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -87,6 +89,8 @@ data class AudioDiagnostics(
             treble == other.treble && targetEnergy == other.targetEnergy &&
             rms == other.rms && isBeat == other.isBeat && fps == other.fps &&
             bpm == other.bpm && silent == other.silent &&
+            engineRunning == other.engineRunning && captureError == other.captureError &&
+            activeBand == other.activeBand &&
             sourceName == other.sourceName && hasAudioSignal == other.hasAudioSignal &&
             beatsPerSecond == other.beatsPerSecond && gainScale == other.gainScale &&
             threshold == other.threshold && autoSensitivity == other.autoSensitivity &&
@@ -105,6 +109,9 @@ data class AudioDiagnostics(
         result = 31 * result + fps
         result = 31 * result + bpm
         result = 31 * result + silent.hashCode()
+        result = 31 * result + engineRunning.hashCode()
+        result = 31 * result + (captureError?.hashCode() ?: 0)
+        result = 31 * result + activeBand
         result = 31 * result + beatsPerSecond
         result = 31 * result + gainScale.hashCode()
         result = 31 * result + threshold.hashCode()
@@ -266,15 +273,22 @@ internal class TempoTracker(private val capacity: Int = 8) {
 
     fun push(gapMs: Float) {
 
-        if (gapMs < 150f || gapMs > 1000f) return
+        if (gapMs < 150f || gapMs > 2000f) return
         intervals[index] = gapMs
         index = (index + 1) % capacity
-        if (index == 0) count = capacity
         count = min(count + 1, capacity)
+
         val sorted = FloatArray(count)
-        System.arraycopy(intervals, 0, sorted, 0, count)
+        for (i in 0 until count) {
+            val src = (index - count + i + capacity * 2) % capacity
+            sorted[i] = intervals[src]
+        }
         Arrays.sort(sorted)
-        cachedMedianMs = sorted[count / 2]
+        cachedMedianMs = if (count % 2 == 1) {
+            sorted[count / 2]
+        } else {
+            (sorted[count / 2 - 1] + sorted[count / 2]) / 2f
+        }
     }
 
     fun medianMs(): Float = cachedMedianMs
@@ -282,11 +296,15 @@ internal class TempoTracker(private val capacity: Int = 8) {
     fun spreadMs(): Float {
         if (count < 2) return 0f
         var sum = 0f
-        for (i in 0 until count) sum += intervals[i]
+        for (i in 0 until count) {
+            val src = (index - count + i + capacity * 2) % capacity
+            sum += intervals[src]
+        }
         val mean = sum / count
         var variance = 0f
         for (i in 0 until count) {
-            val d = intervals[i] - mean
+            val src = (index - count + i + capacity * 2) % capacity
+            val d = intervals[src] - mean
             variance += d * d
         }
         return sqrt(variance / count)
@@ -310,6 +328,8 @@ internal class BandSignal(
 
     val value: Float get() = tracker.value
 
+    fun medianMs(): Float = tempo.medianMs()
+
     @Volatile var score = 0f; private set
 
     private var lastBeatMs = 0L
@@ -327,8 +347,7 @@ internal class BandSignal(
         hitTimes.fill(0L)
     }
 
-    fun hitsWithin(windowMs: Long, nowMs: Long): Int {
-        val total = minOf(hitsSeen, BS_HIT_MEMORY)
+    fun hitsWithin(windowMs: Long, nowMs: Long): Int {        val total = minOf(hitsSeen, BS_HIT_MEMORY)
         var n = 0
         for (i in 0 until total) {
             if (nowMs - hitTimes[i] <= windowMs) n++
@@ -337,8 +356,9 @@ internal class BandSignal(
     }
 
     fun detect(nowMs: Long, threshold: Float, refractoryMs: Long): Boolean {
-        history.push(value, nowMs)
+
         val baseline = history.averageWithin(BS_BEAT_WINDOW_MS, nowMs)
+        history.push(value, nowMs)
         val gate = max(baseline * threshold, BS_SIGNAL_FLOOR + BS_GATE_MARGIN)
         val gap = nowMs - lastBeatMs
         if (value <= gate || gap < refractoryMs) return false
@@ -454,7 +474,7 @@ object AudioReactiveEngine {
     private const val BEAT_WINDOW_MS = 1000L
     private const val MIN_BEAT_GAP_MS = 150L
     private const val MAX_BEAT_GAP_MS = 430L
-    private const val DIAGNOSTICS_INTERVAL_MS = 33L
+    private const val DIAGNOSTICS_INTERVAL_MS = 50L
     private const val MIN_PUMP_GAP_MS = 8L
     private const val BEAT_TIME_MEMORY = 16
     private const val BIN_SCALE = 1f / 128f
@@ -489,6 +509,10 @@ object AudioReactiveEngine {
     const val MIN_HZ_DEFAULT = 5000f
     const val MAX_HZ_DEFAULT = 14000f
 
+    const val DEFAULT_DEGREES_PER_BEAT = 30f
+    const val MIN_DEGREES_PER_BEAT = 5f
+    const val MAX_DEGREES_PER_BEAT = 180f
+
     @Volatile var audioSource = SOURCE_GLOBAL_MIX; private set
     @Volatile var gainMultiplier = 0.7f; private set
     @Volatile var beatThreshold = 1.18f; private set
@@ -498,7 +522,7 @@ object AudioReactiveEngine {
     @Volatile var maxFreqHz = MAX_HZ_DEFAULT; private set
     @Volatile var bandMode = BAND_MODE_AUTO; private set
 
-    @Volatile var degreesPerBeat = 30f; private set
+    @Volatile var degreesPerBeat = DEFAULT_DEGREES_PER_BEAT; private set
 
     private val _diagnostics = MutableStateFlow(AudioDiagnostics())
     val diagnostics: StateFlow<AudioDiagnostics> = _diagnostics.asStateFlow()
@@ -537,6 +561,8 @@ object AudioReactiveEngine {
     private val micInput = BandInput()
     private val waveformBuf = FloatArray(WAVE_POINTS)
     private val waveLock = Any()
+
+    private val pumpLock = Any()
 
     private val bandSignals = listOf(
         BandSignal(BAND_BROADBAND, attackMs = 10f, releaseMs = 160f),
@@ -585,6 +611,9 @@ object AudioReactiveEngine {
     fun loadFromPrefs(context: Context) {
         appContext = context.applicationContext
         val cfg = Prefs.audioConfig(context)
+        val sourceChanged = cfg.source != audioSource
+        val bandChanged = cfg.bandMode != bandMode ||
+                cfg.minHz != minFreqHz || cfg.maxHz != maxFreqHz
         audioSource = cfg.source
         gainMultiplier = cfg.gain
         beatThreshold = cfg.threshold
@@ -598,20 +627,36 @@ object AudioReactiveEngine {
         _autoSensitivityFlow.value = autoSensitivity
         activeBandId = if (bandMode == BAND_MODE_AUTO) BAND_BROADBAND else BAND_AUTO
         lastControlMs = 0L
+        if (sourceChanged || bandChanged) {
+
+            synchronized(pumpLock) {
+                bandSignals.forEach { it.reset() }
+                manualSignal.reset()
+                lastAutoSelectMs = 0L
+            }
+        }
     }
 
     fun setSource(context: Context, source: Int) {
         val next = if (source == SOURCE_MIC) SOURCE_MIC else SOURCE_GLOBAL_MIX
         if (next == audioSource) {
-            restart()
+            engineScope.launch { restart() }
             return
         }
-        audioSource = next
-        _sourceFlow.value = next
-        Prefs.setAudioSource(context, audioSource)
-        restart()
 
-        DashDazzService.refreshForegroundType(context)
+        if (next == SOURCE_MIC) {
+            audioSource = next
+            _sourceFlow.value = next
+            Prefs.setAudioSource(context, audioSource)
+            DashDazzService.refreshForegroundType(context)
+            engineScope.launch { restart() }
+        } else {
+            audioSource = next
+            _sourceFlow.value = next
+            Prefs.setAudioSource(context, audioSource)
+            engineScope.launch { restart() }
+            DashDazzService.refreshForegroundType(context)
+        }
     }
 
     fun setGain(context: Context, gain: Float) {
@@ -658,7 +703,7 @@ object AudioReactiveEngine {
         }
         if (next == current) return
         beatThreshold = next
-        appContext?.let { Prefs.setAudioBeatThreshold(it, next) }
+
     }
 
     fun setBandMode(context: Context, mode: Int) {
@@ -675,7 +720,7 @@ object AudioReactiveEngine {
     }
 
     fun setDegreesPerBeat(context: Context, degrees: Float) {
-        degreesPerBeat = degrees.coerceIn(5f, 180f)
+        degreesPerBeat = degrees.coerceIn(MIN_DEGREES_PER_BEAT, MAX_DEGREES_PER_BEAT)
         Prefs.setAudioDegreesPerBeat(context, degreesPerBeat)
     }
 
@@ -686,9 +731,15 @@ object AudioReactiveEngine {
         minFreqHz = lo
         maxFreqHz = hi
         Prefs.setAudioBand(context, lo, hi)
-        tempo.reset()
-        silentSinceMs = 0L
-        levelBand.reset()
+
+        synchronized(pumpLock) {
+            tempo.reset()
+            silentSinceMs = 0L
+            levelBand.reset()
+            bandSignals.forEach { it.reset() }
+            manualSignal.reset()
+            lastAutoSelectMs = 0L
+        }
     }
 
     fun start(): Boolean {
@@ -724,7 +775,18 @@ object AudioReactiveEngine {
         start()
     }
 
-    fun stop() {
+    fun ensurePreview(context: Context) {
+        if (running) return
+        loadFromPrefs(context)
+        start()
+    }
+
+    fun endPreview() {
+        if (DashDazzService.isRunning) return
+        stop()
+    }
+
+    fun stop(clearError: Boolean = true) {        val wasRunning = running
         micJob?.cancel()
         micJob = null
         retryJob?.cancel()
@@ -736,9 +798,13 @@ object AudioReactiveEngine {
         }
         visualizer = null
         running = false
-        captureError = null
-        resetDsp()
-        _diagnostics.value = AudioDiagnostics()
+
+        if (autoSensitivity) {
+            appContext?.let { Prefs.setAudioBeatThreshold(it, beatThreshold) }
+        }
+        if (clearError && wasRunning) captureError = null
+        synchronized(pumpLock) { resetDsp() }
+        _diagnostics.value = AudioDiagnostics(captureError = captureError)
     }
 
     private fun resetDsp() {
@@ -767,7 +833,7 @@ object AudioReactiveEngine {
         beatsThisSecond = 0
         beatWindowStartMs = 0L
         lastDiagPublishMs = 0L
-        beatCount.set(0)
+
         beatTimeIndex = 0
         beatTimesSeen = 0
         beatTimes.fill(0L)
@@ -775,8 +841,9 @@ object AudioReactiveEngine {
     }
 
     private fun startVisualizer(): Boolean {
+        var viz: Visualizer? = null
         return try {
-            val viz = Visualizer(0)
+            viz = Visualizer(0)
             val range = Visualizer.getCaptureSizeRange()
 
             val safeSize = if (range != null && range.size >= 2) {
@@ -793,13 +860,17 @@ object AudioReactiveEngine {
             visualizer = viz
             running = true
             captureError = null
-            captureErrorRetryable = true
             Log.d(TAG, "Visualizer active (captureSize=$safeSize, rate=${Visualizer.getMaxCaptureRate()}mHz)")
             true
         } catch (e: Throwable) {
+            try {
+                viz?.release()
+            } catch (_: Throwable) {
+            }
+            if (visualizer == viz) visualizer = null
             Log.e(TAG, "Visualizer failed: ${e.message}", e)
             running = false
-            captureError = e.message
+            captureError = e.message ?: e.javaClass.simpleName
             captureErrorRetryable = e !is SecurityException
             false
         }
@@ -827,6 +898,7 @@ object AudioReactiveEngine {
         }
         Log.e(TAG, "No usable microphone input source")
         running = false
+        captureError = "Microphone unavailable"
         return false
     }
 
@@ -836,43 +908,71 @@ object AudioReactiveEngine {
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        val record = AudioRecord(
-            source,
-            MIC_SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            minBuf.coerceAtLeast(MIC_FRAME * 4)
-        )
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            record.release()
+        if (minBuf <= 0) return null
+        var record: AudioRecord? = null
+        try {
+            record = AudioRecord(
+                source,
+                MIC_SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuf.coerceAtLeast(MIC_FRAME * 4)
+            )
+        } catch (_: Throwable) {
             return null
         }
-        record.startRecording()
+        if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
+            try {
+                record?.release()
+            } catch (_: Throwable) {
+            }
+            return null
+        }
+        try {
+            record.startRecording()
+        } catch (e: Throwable) {
+            try {
+                record.release()
+            } catch (_: Throwable) {
+            }
+            return null
+        }
         return record
     }
 
     private fun launchMicLoop(record: AudioRecord) {
         running = true
+        captureError = null
         micJob = engineScope.launch {
             val frame = ShortArray(MIC_FRAME)
             try {
                 while (running) {
+                    ensureActive()
                     val read = record.read(frame, 0, frame.size)
                     if (read > 0) {
                         processMicFrame(frame, read)
                     } else if (read < 0) {
                         Log.e(TAG, "AudioRecord.read error: $read")
+                        running = false
+                        captureError = "Mic read error $read"
                         break
                     }
                 }
             } catch (e: Exception) {
+
+                if (e is CancellationException) throw e
                 Log.e(TAG, "Mic loop failed: ${e.message}", e)
+                running = false
+                captureError = e.message ?: "Mic failed"
             } finally {
                 try {
                     record.stop()
                 } catch (_: Exception) {
                 }
-                record.release()
+                try {
+                    record.release()
+                } catch (_: Exception) {
+                }
             }
         }
         Log.d(TAG, "Mic capture started (source=${record.audioSource})")
@@ -882,9 +982,9 @@ object AudioReactiveEngine {
         micBands.analyse(pcm, count, MIC_SAMPLE_RATE)
 
         synchronized(waveLock) {
-            val stride = max(1, count / WAVE_POINTS)
             for (i in 0 until WAVE_POINTS) {
-                val idx = min(i * stride, count - 1)
+                val idx = if (WAVE_POINTS == 1) 0
+                else ((i * (count - 1)) / (WAVE_POINTS - 1)).coerceIn(0, count - 1)
                 waveformBuf[i] = (pcm[idx] / 32767f).coerceIn(-1f, 1f)
             }
         }
@@ -951,6 +1051,8 @@ object AudioReactiveEngine {
     private fun analyseFft(fft: ByteArray) {
         val numBins = captureSize / 2
         if (numBins < 8) return
+
+        if (fft.size < numBins * 2) return
         val nyquist = vizSampleRateHz / 2f
 
         val startBin = ((minFreqHz / nyquist) * numBins).toInt().coerceIn(1, numBins - 2)
@@ -985,6 +1087,12 @@ object AudioReactiveEngine {
     }
 
     private fun pump() {
+        synchronized(pumpLock) {
+            pumpLocked()
+        }
+    }
+
+    private fun pumpLocked() {
         val now = System.currentTimeMillis()
         if (now - lastPumpMs < MIN_PUMP_GAP_MS) return
         lastPumpMs = now
@@ -1004,16 +1112,23 @@ object AudioReactiveEngine {
         level = levelBand.value
 
         var activeFired = false
+        val globalRef = refractoryMs()
         for (signal in bandSignals) {
             signal.push(input.bands[signal.id] * userGain, dt, autoSensitivity)
-            val fired = signal.detect(now, beatThreshold, refractoryMs())
+            val own = signal.medianMs()
+            val ref = if (own > 0f) (own * 0.42f).toLong().coerceIn(MIN_BEAT_GAP_MS, MAX_BEAT_GAP_MS)
+            else globalRef
+            val fired = signal.detect(now, beatThreshold, ref)
             if (bandMode == BAND_MODE_AUTO && signal.id == activeBandId && fired) {
                 activeFired = true
             }
         }
         manualSignal.push(input.manual * userGain, dt, autoSensitivity)
+        val manualOwn = manualSignal.medianMs()
+        val manualRef = if (manualOwn > 0f) (manualOwn * 0.42f).toLong().coerceIn(MIN_BEAT_GAP_MS, MAX_BEAT_GAP_MS)
+        else globalRef
         if (bandMode == BAND_MODE_MANUAL &&
-            manualSignal.detect(now, beatThreshold, refractoryMs())
+            manualSignal.detect(now, beatThreshold, manualRef)
         ) {
             activeFired = true
         }
@@ -1101,7 +1216,10 @@ object AudioReactiveEngine {
     }
 
     private fun maybePublishDiagnostics(now: Long) {
-        if (now - lastDiagPublishMs < DIAGNOSTICS_INTERVAL_MS) return
+
+        val observed = _diagnostics.subscriptionCount.value > 0
+        val interval = if (observed) DIAGNOSTICS_INTERVAL_MS else 1000L
+        if (now - lastDiagPublishMs < interval) return
         lastDiagPublishMs = now
 
         var fps = lastFps
@@ -1158,18 +1276,21 @@ object AudioReactiveEngine {
     }
 
     fun sample(nowMs: Long = System.currentTimeMillis()): AudioFrame =
-        AudioFrame(
-            nowMs = nowMs,
-            level = level,
-            bass = bassBand.value,
-            mid = midBand.value,
-            treble = trebleBand.value,
-            band = bandNorm,
-            beat = decayedBeat(nowMs),
-            beatCount = beatCount.get(),
-            bpm = tempo.bpm(),
-            hasSignal = level > SIGNAL_FLOOR,
-            silent = isSilent(nowMs),
-            silentForMs = if (silentSinceMs == 0L) 0L else nowMs - silentSinceMs
-        )
+        synchronized(pumpLock) {
+            AudioFrame(
+                nowMs = nowMs,
+                level = level,
+                bass = bassBand.value,
+                mid = midBand.value,
+                treble = trebleBand.value,
+                band = bandNorm,
+                beat = decayedBeat(nowMs),
+                beatCount = beatCount.get(),
+                bpm = tempo.bpm(),
+                hasSignal = level > SIGNAL_FLOOR,
+                silent = isSilent(nowMs),
+                silentForMs = if (silentSinceMs == 0L) 0L else (nowMs - silentSinceMs).coerceAtLeast(0L),
+                beatsPerSecond = beatsPerSecond(nowMs).toInt()
+            )
+        }
 }

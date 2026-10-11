@@ -80,9 +80,13 @@ class BandSignalTest {
         assertTrue(frame(s, 0.4f))
 
         s.reset()
-        var fired = false
-        repeat(20) { if (frame(s, 0.5f)) fired = true }
-        assertFalse("reset must clear beat state", fired)
+
+        assertEquals(0f, s.score, 1e-6f)
+        assertEquals(0, s.hitsWithin(60_000L, clock))
+
+        frames(s, 0.02f, 10)
+        val hits = frames(s, 0.5f, 30)
+        assertTrue("constant level must settle, got $hits hits", hits <= 3)
     }
 
     @Test

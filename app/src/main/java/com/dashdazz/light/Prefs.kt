@@ -52,37 +52,47 @@ object Prefs {
 
     fun audioConfig(context: Context): AudioConfig {
         val p = prefs(context)
+        val minHz = p.getFloat(KEY_AUDIO_MIN_HZ, AudioReactiveEngine.MIN_HZ_DEFAULT)
+            .coerceIn(20f, 20000f)
+        val maxHz = p.getFloat(KEY_AUDIO_MAX_HZ, AudioReactiveEngine.MAX_HZ_DEFAULT)
+            .coerceIn(20f, 20000f)
+        val (lo, hi) = if (minHz <= maxHz) minHz to maxHz else maxHz to minHz
         return AudioConfig(
-            source = p.getInt(KEY_AUDIO_SOURCE, AudioReactiveEngine.SOURCE_GLOBAL_MIX),
-            gain = p.getFloat(KEY_AUDIO_GAIN, 0.7f),
-            threshold = p.getFloat(KEY_AUDIO_THRESHOLD, 1.18f),
-            minHz = p.getFloat(KEY_AUDIO_MIN_HZ, AudioReactiveEngine.MIN_HZ_DEFAULT),
-            maxHz = p.getFloat(KEY_AUDIO_MAX_HZ, AudioReactiveEngine.MAX_HZ_DEFAULT),
-            bandMode = p.getInt(KEY_AUDIO_BAND_MODE, AudioReactiveEngine.BAND_MODE_AUTO),
-            degreesPerBeat = p.getFloat(KEY_AUDIO_DEGREES_PER_BEAT, 30f),
+            source = p.getInt(KEY_AUDIO_SOURCE, AudioReactiveEngine.SOURCE_GLOBAL_MIX)
+                .coerceIn(0, 1),
+            gain = p.getFloat(KEY_AUDIO_GAIN, 0.7f).coerceIn(0.1f, 3f),
+            threshold = p.getFloat(KEY_AUDIO_THRESHOLD, 1.18f).coerceIn(1.02f, 2f),
+            minHz = lo,
+            maxHz = hi,
+            bandMode = p.getInt(KEY_AUDIO_BAND_MODE, AudioReactiveEngine.BAND_MODE_AUTO)
+                .coerceIn(0, 1),
+            degreesPerBeat = p.getFloat(KEY_AUDIO_DEGREES_PER_BEAT, AudioReactiveEngine.DEFAULT_DEGREES_PER_BEAT)
+                .coerceIn(AudioReactiveEngine.MIN_DEGREES_PER_BEAT, AudioReactiveEngine.MAX_DEGREES_PER_BEAT),
             autoSensitivity = p.getBoolean(KEY_AUDIO_AUTO_SENSITIVITY, true)
         )
     }
 
     fun setAudioSource(context: Context, source: Int) {
-        prefs(context).edit().putInt(KEY_AUDIO_SOURCE, source).apply()
+        prefs(context).edit().putInt(KEY_AUDIO_SOURCE, source.coerceIn(0, 1)).apply()
     }
     fun setAudioGain(context: Context, gain: Float) {
-        prefs(context).edit().putFloat(KEY_AUDIO_GAIN, gain).apply()
+        prefs(context).edit().putFloat(KEY_AUDIO_GAIN, gain.coerceIn(0.1f, 3f)).apply()
     }
 
     fun setAudioBeatThreshold(context: Context, threshold: Float) {
-        prefs(context).edit().putFloat(KEY_AUDIO_THRESHOLD, threshold).apply()
+        prefs(context).edit().putFloat(KEY_AUDIO_THRESHOLD, threshold.coerceIn(1.02f, 2f)).apply()
     }
 
     fun setAudioBand(context: Context, minHz: Float, maxHz: Float) {
+        val lo = minHz.coerceIn(20f, 20000f)
+        val hi = maxHz.coerceIn(20f, 20000f)
         prefs(context).edit()
-            .putFloat(KEY_AUDIO_MIN_HZ, minHz)
-            .putFloat(KEY_AUDIO_MAX_HZ, maxHz)
+            .putFloat(KEY_AUDIO_MIN_HZ, minOf(lo, hi))
+            .putFloat(KEY_AUDIO_MAX_HZ, maxOf(lo, hi))
             .apply()
     }
     fun setAudioBandMode(context: Context, mode: Int) {
-        prefs(context).edit().putInt(KEY_AUDIO_BAND_MODE, mode).apply()
+        prefs(context).edit().putInt(KEY_AUDIO_BAND_MODE, mode.coerceIn(0, 1)).apply()
     }
 
     fun setAudioAutoSensitivity(context: Context, enabled: Boolean) {
@@ -90,7 +100,10 @@ object Prefs {
     }
 
     fun setAudioDegreesPerBeat(context: Context, degrees: Float) {
-        prefs(context).edit().putFloat(KEY_AUDIO_DEGREES_PER_BEAT, degrees).apply()
+        prefs(context).edit().putFloat(
+            KEY_AUDIO_DEGREES_PER_BEAT,
+            degrees.coerceIn(AudioReactiveEngine.MIN_DEGREES_PER_BEAT, AudioReactiveEngine.MAX_DEGREES_PER_BEAT)
+        ).apply()
     }
 
     const val NOTIF_MODE_OFF = 0
@@ -122,7 +135,7 @@ object Prefs {
     }
 
     fun setSpeedMs(context: Context, speed: Long) {
-        prefs(context).edit().putLong(KEY_SPEED, speed).apply()
+        prefs(context).edit().putLong(KEY_SPEED, speed.coerceIn(10L, 500L)).apply()
     }
 
     fun getBrightness(context: Context, default: Float = 1.0f): Float {
@@ -130,7 +143,8 @@ object Prefs {
     }
 
     fun setBrightness(context: Context, brightness: Float) {
-        prefs(context).edit().putFloat(KEY_BRIGHTNESS, brightness).apply()
+        val v = if (brightness.isNaN()) 1f else brightness.coerceIn(0.05f, 1f)
+        prefs(context).edit().putFloat(KEY_BRIGHTNESS, v).apply()
     }
 
     fun isPauseOnScreenOff(context: Context, default: Boolean = true): Boolean {
@@ -162,7 +176,7 @@ object Prefs {
     }
 
     fun setDuoHueOffset(context: Context, degrees: Int) {
-        prefs(context).edit().putInt(KEY_DUO_OFFSET, degrees).apply()
+        prefs(context).edit().putInt(KEY_DUO_OFFSET, degrees.coerceIn(0, 360)).apply()
     }
 
     fun isBlinkOnNotification(context: Context, default: Boolean = false): Boolean {
@@ -229,6 +243,47 @@ object Prefs {
         prefs(context).edit().putInt(KEY_DARK_MODE, mode).apply()
     }
 
+    const val MAX_CUSTOM_PRESETS = 24
+    private const val KEY_CONFLICT_DISMISSED = "key_conflict_dismissed"
+    private const val KEY_FRAME_MIN_MS = "key_frame_min_ms"
+    private const val KEY_NOTIF_APPS = "key_notif_apps"
+    private const val KEY_CALL_MODE = "key_call_mode"
+
+    const val FRAME_SMOOTH_MS = 20L
+    const val FRAME_BALANCED_MS = 33L
+    const val FRAME_ECO_MS = 66L
+
+    fun isConflictDismissed(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CONFLICT_DISMISSED, false)
+
+    fun setConflictDismissed(context: Context, dismissed: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CONFLICT_DISMISSED, dismissed).apply()
+    }
+
+    fun getFrameMinMs(context: Context): Long =
+        prefs(context).getLong(KEY_FRAME_MIN_MS, FRAME_SMOOTH_MS).coerceIn(15L, 100L)
+
+    fun setFrameMinMs(context: Context, ms: Long) {
+        prefs(context).edit().putLong(KEY_FRAME_MIN_MS, ms.coerceIn(15L, 100L)).apply()
+    }
+
+    fun getNotifApps(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_NOTIF_APPS, emptySet())?.toSet() ?: emptySet()
+
+    fun setNotifApps(context: Context, pkgs: Set<String>) {
+        prefs(context).edit().putStringSet(KEY_NOTIF_APPS, pkgs.toSet()).apply()
+    }
+
+    fun getCallMode(context: Context): Int =
+        prefs(context).getInt(KEY_CALL_MODE, NOTIF_MODE_OFF)
+            .coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
+
+    fun setCallMode(context: Context, mode: Int) {
+        prefs(context).edit()
+            .putInt(KEY_CALL_MODE, mode.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE))
+            .apply()
+    }
+
     fun getCustomPresets(context: Context): List<Pair<Float, Float>> {
         val raw = prefs(context).getString(KEY_CUSTOM_PRESETS, null) ?: return emptyList()
         return raw.split(";").filter { it.contains(",") }.mapNotNull {
@@ -240,11 +295,14 @@ object Prefs {
     }
 
     fun saveCustomPreset(context: Context, hue: Float, saturation: Float) {
+        val h = hue.coerceIn(0f, 360f)
+        val s = saturation.coerceIn(0f, 1f)
         val current = getCustomPresets(context).toMutableList()
-        if (current.any { Math.abs(it.first - hue) < 2f && Math.abs(it.second - saturation) < 0.03f }) {
+        if (current.any { Math.abs(it.first - h) < 2f && Math.abs(it.second - s) < 0.03f }) {
             return
         }
-        current.add(Pair(hue, saturation))
+        current.add(Pair(h, s))
+        while (current.size > MAX_CUSTOM_PRESETS) current.removeAt(0)
         val encoded = current.joinToString(";") { "${it.first},${it.second}" }
         prefs(context).edit().putString(KEY_CUSTOM_PRESETS, encoded).apply()
     }
@@ -266,21 +324,21 @@ object Prefs {
                 p.edit().putInt(KEY_NOTIF_MODE, NOTIF_MODE_BLINK).apply()
                 return NOTIF_MODE_BLINK
             }
-            return default
+            return default.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
         }
-        return p.getInt(KEY_NOTIF_MODE, default)
+        return p.getInt(KEY_NOTIF_MODE, default).coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
     }
 
     fun setNotificationMode(context: Context, mode: Int) {
-        prefs(context).edit().putInt(KEY_NOTIF_MODE, mode).apply()
+        prefs(context).edit().putInt(KEY_NOTIF_MODE, mode.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)).apply()
     }
 
     fun getNotificationActivateDuration(context: Context, default: Int = 5): Int {
-        return prefs(context).getInt(KEY_NOTIF_ACTIVATE_DURATION, default)
+        return prefs(context).getInt(KEY_NOTIF_ACTIVATE_DURATION, default).coerceIn(1, 60)
     }
 
     fun setNotificationActivateDuration(context: Context, seconds: Int) {
-        prefs(context).edit().putInt(KEY_NOTIF_ACTIVATE_DURATION, seconds).apply()
+        prefs(context).edit().putInt(KEY_NOTIF_ACTIVATE_DURATION, seconds.coerceIn(1, 60)).apply()
     }
 
     fun isAudioReactive(context: Context, default: Boolean = false): Boolean =
@@ -295,12 +353,39 @@ object Prefs {
         if (p.getBoolean(KEY_AUDIO_MODIFIER_MIGRATED, false)) return null
         val saved = p.getInt(KEY_MODE, -1)
         if (saved != DashDazzService.MODE_AUDIO_REACTIVE) return null
-        p.edit().putBoolean(KEY_AUDIO_MODIFIER_MIGRATED, true).apply()
+
+        p.edit()
+            .putInt(KEY_MODE, DashDazzService.MODE_RAINBOW)
+            .putBoolean(KEY_AUDIO_REACTIVE, true)
+            .putBoolean(KEY_AUDIO_MODIFIER_MIGRATED, true)
+            .apply()
         return DashDazzService.MODE_RAINBOW
     }
 
     fun markAudioModifierMigrated(context: Context) {
         prefs(context).edit().putBoolean(KEY_AUDIO_MODIFIER_MIGRATED, true).apply()
+    }
+
+    fun saveAll(context: Context, s: DashDazzState) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_MODE, s.mode)
+            .putInt(KEY_COLOR, s.color)
+            .putLong(KEY_SPEED, s.speedMs.coerceIn(10L, 500L))
+            .putFloat(KEY_BRIGHTNESS, if (s.brightness.isNaN()) 1f else s.brightness.coerceIn(0.05f, 1f))
+            .putInt(KEY_SCREEN_MODE, s.screenMode.coerceIn(0, 3))
+            .putBoolean(KEY_BLINK_ON_NOTIFICATION, s.blinkOnNotification)
+            .putInt(KEY_PALETTE, s.palette)
+            .putInt(KEY_DUAL_STYLE, s.dualStyle)
+            .putInt(KEY_SPLIT_COLOR_A, s.splitColorA)
+            .putInt(KEY_SPLIT_COLOR_B, s.splitColorB)
+            .putInt(KEY_SPIN_COLOR_A, s.spinColorA)
+            .putInt(KEY_SPIN_COLOR_B, s.spinColorB)
+            .putInt(KEY_DUO_OFFSET, s.duoHueOffset.coerceIn(0, 360))
+            .putInt(KEY_NOTIF_MODE, s.notifMode.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE))
+            .putInt(KEY_NOTIF_ACTIVATE_DURATION, s.notifActivateDuration.coerceIn(1, 60))
+            .putBoolean(KEY_AUDIO_REACTIVE, s.audioReactive)
+            .putLong(KEY_FRAME_MIN_MS, s.frameMinMs.coerceIn(15L, 100L))
+            .apply()
     }
 
     fun loadState(context: Context): DashDazzState {
@@ -320,7 +405,8 @@ object Prefs {
             duoHueOffset = getDuoHueOffset(context),
             notifMode = getNotificationMode(context),
             notifActivateDuration = getNotificationActivateDuration(context),
-            audioReactive = isAudioReactive(context)
+            audioReactive = isAudioReactive(context),
+            frameMinMs = getFrameMinMs(context)
         )
     }
 }

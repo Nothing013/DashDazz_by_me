@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -16,12 +17,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,19 +41,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import rikka.shizuku.Shizuku
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.extra.*
@@ -56,8 +69,13 @@ import top.yukonga.miuix.kmp.theme.lightColorScheme
 
 class MainActivity : ComponentActivity() {
 
-    private val permListener = Shizuku.OnRequestPermissionResultListener { _, _ ->
+    private val permListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         shizukuPermissionState.value = LightsBridge.hasShizukuPermission()
+        if (requestCode == 1001 && grantResult != PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread {
+                Toast.makeText(this, R.string.shizuku_permission_needed, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private val shizukuPermissionState = mutableStateOf(false)
@@ -104,7 +122,7 @@ class MainActivity : ComponentActivity() {
                             if (LightsBridge.isShizukuAvailable()) {
                                 Shizuku.requestPermission(1001)
                             } else {
-                                Toast.makeText(this, R.string.shizuku_not_running, Toast.LENGTH_SHORT).show()
+                                openShizukuManager()
                             }
                         },
                         onContinue = {
@@ -128,7 +146,7 @@ class MainActivity : ComponentActivity() {
                             if (LightsBridge.isShizukuAvailable()) {
                                 Shizuku.requestPermission(1001)
                             } else {
-                                Toast.makeText(this, R.string.shizuku_not_running, Toast.LENGTH_SHORT).show()
+                                openShizukuManager()
                             }
                         },
                         onRecheckRoot = { checkRootStatusAsync() }
@@ -145,10 +163,18 @@ class MainActivity : ComponentActivity() {
         checkRootStatusAsync()
     }
 
+    @Volatile
+    private var rootCheckSeq = 0
+
     private fun checkRootStatusAsync() {
+        val seq = ++rootCheckSeq
         Thread {
             val root = LightsBridge.checkRootFresh()
+
+            if (seq != rootCheckSeq) return@Thread
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (seq != rootCheckSeq) return@runOnUiThread
                 rootState.value = root
                 rootCheckedState.value = true
             }
@@ -184,6 +210,279 @@ class MainActivity : ComponentActivity() {
             AppCompatDelegate.setDefaultNightMode(target)
         }
     }
+
+    private fun openShizukuManager() {
+        val pm = packageManager
+        val launch = runCatching {
+            pm.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+        }.getOrNull()
+        try {
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launch)
+            } else {
+                startActivity(
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api")
+                    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                )
+            }
+        } catch (_: Exception) {
+            Toast.makeText(this, R.string.shizuku_not_running, Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+private fun openStripLightSettings(context: Context) {
+    val candidates = listOf(
+        Intent("miui.intent.action.STRIP_LIGHT_SETTINGS"),
+        Intent("com.miui.intent.action.STRIP_LIGHT_SETTINGS"),
+        Intent(Settings.ACTION_SETTINGS)
+    )
+    for (intent in candidates) {
+        try {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return
+        } catch (_: Exception) {
+        }
+    }
+}
+
+@Composable
+private fun LiveRingPreview(
+    state: DashDazzState,
+    baseColor: Int,
+    brightness: Float,
+    modifier: Modifier = Modifier
+) {
+    val scratch = remember { FloatArray(3) }
+    fun dimmed(argb: Int): Color {
+        AndroidColor.colorToHSV(argb, scratch)
+        return Color(
+            AndroidColor.HSVToColor(
+                floatArrayOf(scratch[0], scratch[1], brightness.coerceIn(0.05f, 1f))
+            )
+        )
+    }
+
+    val live = state.isRunning && !state.isScreenPaused
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(state.mode, state.dualStyle, live, state.frameMinMs) {
+        tick = 0
+        if (!live) return@LaunchedEffect
+        val period = maxOf(50L, state.frameMinMs)
+        while (true) {
+            delay(period)
+            tick++
+        }
+    }
+    fun hsvColor(h: Float, s: Float, v: Float): Color {
+        val hn = ((h % 360f) + 360f) % 360f
+        return Color(AndroidColor.HSVToColor(floatArrayOf(hn, s.coerceIn(0f, 1f), v.coerceIn(0.02f, 1f))))
+    }
+    fun hueSatOf(argb: Int): Pair<Float, Float> {
+        AndroidColor.colorToHSV(argb, scratch)
+        return scratch[0] to scratch[1]
+    }
+    val bright = brightness.coerceIn(0.05f, 1f)
+    val t = tick
+    val stepMs = state.speedMs.coerceIn(10L, 500L)
+    fun ticks(ms: Long): Int = (ms / 50L).toInt().coerceAtLeast(1)
+
+    val rate = 50f / stepMs.toFloat()
+    val duoRate = 50f / stepMs.coerceIn(30L, 250L).toFloat()
+
+    val (halfA, halfB) = if (live) {
+        Color(LightsBridge.lastHwColorA) to Color(LightsBridge.lastHwColorB)
+    } else when {
+        state.mode == DashDazzService.MODE_RAINBOW -> {
+            val palette = Palettes.ALL.firstOrNull { it.id == state.palette }
+            (palette?.colors?.firstOrNull()?.let { Color(it) }
+                ?: hsvColor(0f, 1f, bright)).let { it to it }
+        }
+        state.mode == DashDazzService.MODE_BREATHE -> {
+            val (h, s) = hueSatOf(baseColor)
+            val factor = ((kotlin.math.sin(t * 0.06f * rate) + 1.0) / 2.0).toFloat()
+            hsvColor(h, s, 0.05f + factor * (bright - 0.05f)).let { it to it }
+        }
+        state.mode == DashDazzService.MODE_SOLID -> {
+            Color(baseColor).let { it to it }
+        }
+        state.mode == DashDazzService.MODE_DUAL &&
+                (state.dualStyle == DashDazzService.DUAL_HARDWARE_SPLIT) -> {
+            Color(state.splitColorA) to Color(state.splitColorB)
+        }
+        state.mode == DashDazzService.MODE_DUAL &&
+                (state.dualStyle == DashDazzService.DUAL_SPIN ||
+                        state.dualStyle == DashDazzService.DUAL_ALTERNATE) -> {
+            val activeFirst = if (state.dualStyle == DashDazzService.DUAL_SPIN) {
+                ((t / ticks(stepMs.coerceIn(50L, 500L))) % 2 == 0)
+            } else {
+                ((t / ticks(stepMs * 8L)) % 2 == 0)
+            }
+            val (ha, sa) = hueSatOf(state.spinColorA)
+            val (hb, sb) = hueSatOf(state.spinColorB)
+            if (activeFirst) {
+                hsvColor(ha, sa, bright) to hsvColor(hb, sb, 0.08f)
+            } else {
+                hsvColor(ha, sa, 0.08f) to hsvColor(hb, sb, bright)
+            }
+        }
+        state.mode == DashDazzService.MODE_DUAL && state.dualStyle == DashDazzService.DUAL_POLICE -> {
+
+            when ((t / ticks(stepMs * 3L)) % 6) {
+                0, 1 -> hsvColor(0f, 1f, bright).let { it to it }
+                3, 4 -> hsvColor(235f, 1f, bright).let { it to it }
+                else -> hsvColor(0f, 0f, 0.03f).let { it to it }
+            }
+        }
+        state.mode == DashDazzService.MODE_DUAL && state.dualStyle == DashDazzService.DUAL_RAINBOW_DUO -> {
+            val duo = (t * 3f * duoRate) % 360f
+            val hueB = ((duo + state.duoHueOffset) % 360f + 360f) % 360f
+            hsvColor(duo, 1f, bright) to hsvColor(hueB, 1f, bright)
+        }
+        state.mode == DashDazzService.MODE_DUAL && state.dualStyle == DashDazzService.DUAL_BEAT_RAINBOW -> {
+            val h = (t * 1.5f * rate) % 360f
+            val v = bright * 0.9f
+            val hueB = ((h + state.duoHueOffset) % 360f + 360f) % 360f
+            hsvColor(h, 1f, v) to hsvColor(hueB, 1f, v)
+        }
+        state.mode == DashDazzService.MODE_DUAL && state.dualStyle == DashDazzService.DUAL_SPLIT_BEAT -> {
+            Color(state.splitColorA) to Color(state.splitColorB)
+        }
+        else -> {
+            Color(baseColor).let { it to it }
+        }
+    }
+
+    CameraModule(
+        ringA = halfA,
+        ringB = halfB,
+        modifier = modifier.semantics { contentDescription = "Live preview of the ring light" }
+    )
+}
+
+private val BLEND_FRACTIONS = floatArrayOf(0f, 0.15f, 0.25f, 0.35f, 0.65f, 0.75f, 0.85f, 1f)
+
+private fun blendedHalf(halfA: Color, halfB: Color, frac: Float): Color {
+    val f = ((frac % 1f) + 1f) % 1f
+    val mid = lerp(halfA, halfB, 0.5f)
+
+    fun sideAt(i: Int): Color = when (i) {
+        0, 1, 6, 7 -> halfA
+        3, 4 -> halfB
+        else -> mid
+    }
+    for (i in 0 until BLEND_FRACTIONS.size - 1) {
+        val f0 = BLEND_FRACTIONS[i]
+        val f1 = BLEND_FRACTIONS[i + 1]
+        if (f in f0..f1) {
+            val t = if (f1 > f0) (f - f0) / (f1 - f0) else 0f
+            return lerp(sideAt(i), sideAt(i + 1), t)
+        }
+    }
+    return halfA
+}
+
+@Composable
+private fun SectionDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .height(1.dp)
+            .clip(RoundedCornerShape(1.dp))
+            .background(MiuixTheme.colorScheme.surfaceVariant)
+    )
+}
+
+@Composable
+private fun CameraModule(ringA: Color, ringB: Color, modifier: Modifier = Modifier) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(28.dp))
+                .background(MiuixTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 12.dp, vertical = 14.dp)
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+                RingDot(halfA = ringA, halfB = ringB)
+                RingDot(halfA = ringA, halfB = ringB)
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                modifier = Modifier.height(44.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color.Gray.copy(alpha = 0.6f))
+                )
+            }
+            Box(
+                modifier = Modifier.height(44.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color.Gray.copy(alpha = 0.6f))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RingDot(
+    halfA: Color,
+    halfB: Color,
+    size: androidx.compose.ui.unit.Dp = 44.dp
+) {
+    Canvas(
+        Modifier
+            .size(size)
+            .semantics { contentDescription = "LED ring, left and right halves" }
+    ) {
+        val px = size.toPx()
+        val r = px / 2f
+        drawCircle(Color(0xFF141414), r)
+
+        val w = (px * 0.16f).coerceAtLeast(4f)
+        val leds = 48
+        val span = 360f / leds
+        val gap = 1.5f
+        val inset = androidx.compose.ui.geometry.Offset(w / 2f, w / 2f)
+        val arcSize = androidx.compose.ui.geometry.Size(px - w, px - w)
+        for (i in 0 until leds) {
+            val midAngle = i * span + span / 2f
+            drawArc(
+                color = blendedHalf(halfA, halfB, midAngle / 360f),
+                startAngle = i * span + gap / 2f,
+                sweepAngle = span - gap,
+                useCenter = false,
+                topLeft = inset,
+                size = arcSize,
+                style = Stroke(w)
+            )
+        }
+        drawCircle(Color.Gray.copy(alpha = 0.5f), r - 1f, style = Stroke(1.dp.toPx()))
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -201,7 +500,7 @@ fun DashDazzScreen(
     val context = LocalContext.current
     val serviceState by DashDazzService.stateFlow.collectAsState()
 
-    LaunchedEffect(isRootAvailable, rootChecked) {
+    LaunchedEffect(isRootAvailable, rootChecked, serviceState.isRunning, serviceState.mode) {
         if (!rootChecked || isRootAvailable) return@LaunchedEffect
         if (!serviceState.isRunning) return@LaunchedEffect
         if (serviceState.mode == DashDazzService.MODE_DUAL) {
@@ -209,7 +508,7 @@ fun DashDazzScreen(
         }
     }
 
-    LaunchedEffect(serviceState.audioReactive) {
+    LaunchedEffect(serviceState.audioReactive, serviceState.mode, serviceState.dualStyle) {
         if (!serviceState.audioReactive) return@LaunchedEffect
         if (serviceState.mode == DashDazzService.MODE_BREATHE) {
             DashDazzService.updateSettings(context, mode = DashDazzService.MODE_SOLID)
@@ -221,18 +520,43 @@ fun DashDazzScreen(
         }
     }
 
+    var pendingAudioEnable by remember { mutableStateOf(false) }
+
+    var pendingCallMode by remember { mutableIntStateOf(-1) }
+
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { granted: Boolean ->
         if (!granted) {
+            pendingAudioEnable = false
             Toast.makeText(
                 context,
                 context.getString(R.string.audio_reactive_permission_denied),
                 Toast.LENGTH_LONG
             ).show()
         } else {
+            if (pendingAudioEnable) {
+                pendingAudioEnable = false
+                DashDazzService.updateSettings(context, audioReactive = true)
+            }
 
             DashDazzService.relaunchAnimation(context)
+        }
+    }
+
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted: Boolean ->
+        if (!granted) {
+            pendingCallMode = -1
+            Toast.makeText(
+                context,
+                context.getString(R.string.call_denied),
+                Toast.LENGTH_LONG
+            ).show()
+        } else if (pendingCallMode >= 0) {
+            Prefs.setCallMode(context, pendingCallMode)
+            pendingCallMode = -1
         }
     }
 
@@ -246,6 +570,22 @@ fun DashDazzScreen(
     var duoHueOffset by remember { mutableIntStateOf(serviceState.duoHueOffset) }
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
+    var showAppPicker by remember { mutableStateOf(false) }
+    var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
+    var callMode by remember { mutableIntStateOf(Prefs.getCallMode(context)) }
+
+    var snack by remember { mutableStateOf<Triple<String, String?, (() -> Unit)?>?>(null) }
+    LaunchedEffect(snack) {
+        if (snack != null) {
+            delay(3500)
+            snack = null
+        }
+    }
+
+    var degreesPerBeat by remember { mutableFloatStateOf(AudioReactiveEngine.degreesPerBeat) }
+    LaunchedEffect(showAudioTuningDialog) {
+        if (showAudioTuningDialog) degreesPerBeat = AudioReactiveEngine.degreesPerBeat
+    }
 
     LaunchedEffect(serviceState.duoHueOffset) {
         duoHueOffset = serviceState.duoHueOffset
@@ -257,11 +597,11 @@ fun DashDazzScreen(
         notifDuration = serviceState.notifActivateDuration
     }
 
-    val initialHsv = remember {
+    val initialHsv = remember(serviceState.color) {
         FloatArray(3).also { AndroidColor.colorToHSV(serviceState.color, it) }
     }
-    var hue by remember { mutableFloatStateOf(initialHsv[0]) }
-    var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
+    var hue by remember(serviceState.color) { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember(serviceState.color) { mutableFloatStateOf(initialHsv[1]) }
     var customPresets by remember { mutableStateOf(Prefs.getCustomPresets(context)) }
     var activeSplitSpot by remember { mutableIntStateOf(0) }
     var activeSpinSpot by remember { mutableIntStateOf(0) }
@@ -269,6 +609,74 @@ fun DashDazzScreen(
     fun getSelectedColor(): Int {
         val argb = AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness))
         return if (argb == -1) 0xFFFEFEFE.toInt() else argb
+    }
+
+    fun withBrightness(argb: Int, v: Float): Int {
+        val hsv = FloatArray(3)
+        AndroidColor.colorToHSV(argb, hsv)
+        val out = AndroidColor.HSVToColor(floatArrayOf(hsv[0], hsv[1], v.coerceIn(0.05f, 1f)))
+        return if (out == -1) 0xFFFEFEFE.toInt() else out
+    }
+
+    fun withSaturation(argb: Int, sat: Float, v: Float): Int {
+        val hsv = FloatArray(3)
+        AndroidColor.colorToHSV(argb, hsv)
+        val out = AndroidColor.HSVToColor(
+            floatArrayOf(hsv[0], sat.coerceIn(0f, 1f), v.coerceIn(0.05f, 1f))
+        )
+        return if (out == -1) 0xFFFEFEFE.toInt() else out
+    }
+
+    fun withHue(argb: Int, h: Float, v: Float): Int {
+        val hsv = FloatArray(3)
+        AndroidColor.colorToHSV(argb, hsv)
+        val hueNorm = ((h % 360f) + 360f) % 360f
+        val out = AndroidColor.HSVToColor(
+            floatArrayOf(hueNorm, hsv[1].coerceIn(0f, 1f), v.coerceIn(0.05f, 1f))
+        )
+        return if (out == -1) 0xFFFEFEFE.toInt() else out
+    }
+
+    fun togglePower(checked: Boolean) {
+        if (!hasShizukuPermission && !isRootAvailable) {
+            onRequestShizukuPermission()
+            return
+        }
+        if (checked) {
+
+            if (serviceState.audioReactive) {
+                val hasAudioPerm = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!hasAudioPerm) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.audio_reactive_permission_rationale),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    return
+                }
+            }
+            DashDazzService.start(
+                context = context,
+                mode = serviceState.mode,
+                color = getSelectedColor(),
+                speedMs = speedMs,
+                brightness = brightness,
+                screenMode = serviceState.screenMode,
+                blinkOnNotification = serviceState.blinkOnNotification,
+                palette = serviceState.palette,
+                dualStyle = serviceState.dualStyle,
+                splitColorA = serviceState.splitColorA,
+                splitColorB = serviceState.splitColorB,
+                spinColorA = serviceState.spinColorA,
+                spinColorB = serviceState.spinColorB,
+                duoHueOffset = duoHueOffset
+            )
+        } else {
+            DashDazzService.stop(context)
+        }
     }
 
     Scaffold(
@@ -322,11 +730,15 @@ fun DashDazzScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .animateContentSize(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
 
-                    if (hasConflict) {
+                    var conflictDismissed by remember(hasConflict) {
+                        mutableStateOf(!hasConflict || Prefs.isConflictDismissed(context))
+                    }
+                    if (hasConflict && !conflictDismissed) {
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
@@ -345,12 +757,15 @@ fun DashDazzScreen(
                                 SuperArrow(
                                     title = stringResource(R.string.btn_open_settings),
                                     onClick = {
-                                        try {
-                                            val intent = Intent(Settings.ACTION_SETTINGS).apply {
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-                                            context.startActivity(intent)
-                                        } catch (_: Exception) {}
+                                        openStripLightSettings(context)
+                                    }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SuperArrow(
+                                    title = stringResource(R.string.btn_ignore),
+                                    onClick = {
+                                        Prefs.setConflictDismissed(context, true)
+                                        conflictDismissed = true
                                     }
                                 )
                             }
@@ -358,63 +773,54 @@ fun DashDazzScreen(
                     }
 
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            SuperSwitch(
-                                title = stringResource(R.string.qs_tile_label),
-                                summary = if (serviceState.isRunning) {
-                                    if (serviceState.isScreenPaused) {
-                                        stringResource(R.string.notification_paused)
-                                    } else {
-                                        stringResource(R.string.status_service_running)
-                                    }
-                                } else {
-                                    stringResource(R.string.status_service_stopped)
-                                },
-                                checked = serviceState.isRunning,
-                                onCheckedChange = { checked ->
-                                    if (!hasShizukuPermission && !isRootAvailable) {
-                                        onRequestShizukuPermission()
-                                        return@SuperSwitch
-                                    }
-                                    if (checked) {
-
-                                        if (serviceState.audioReactive) {
-                                            val hasAudioPerm = ContextCompat.checkSelfPermission(
-                                                context, Manifest.permission.RECORD_AUDIO
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                            if (!hasAudioPerm) {
-                                                Toast.makeText(
-                                                    context,
-                                                    context.getString(R.string.audio_reactive_permission_rationale),
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                                return@SuperSwitch
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                LiveRingPreview(
+                                    state = serviceState,
+                                    baseColor = getSelectedColor(),
+                                    brightness = brightness,
+                                    modifier = Modifier.alpha(
+                                        if (serviceState.isRunning && !serviceState.isScreenPaused) 1f else 0.35f
+                                    )
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                    horizontalAlignment = Alignment.End
+                                ) {
+                                    Text(
+                                        text = if (serviceState.isRunning) {
+                                            if (serviceState.isScreenPaused) {
+                                                stringResource(R.string.notification_paused)
+                                            } else {
+                                                stringResource(R.string.status_service_running)
                                             }
-                                        }
+                                        } else {
+                                            stringResource(R.string.status_service_stopped)
+                                        },
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.End,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
 
-                                        DashDazzService.start(
-                                            context = context,
-                                            mode = serviceState.mode,
-                                            color = getSelectedColor(),
-                                            speedMs = speedMs,
-                                            brightness = brightness,
-                                            screenMode = serviceState.screenMode,
-                                            blinkOnNotification = serviceState.blinkOnNotification,
-                                            palette = serviceState.palette,
-                                            dualStyle = serviceState.dualStyle,
-                                            splitColorA = serviceState.splitColorA,
-                                            splitColorB = serviceState.splitColorB,
-                                            spinColorA = serviceState.spinColorA,
-                                            spinColorB = serviceState.spinColorB,
-                                            duoHueOffset = duoHueOffset
-                                        )
-                                    } else {
-                                        DashDazzService.stop(context)
-                                    }
+                                    Switch(
+                                        checked = serviceState.isRunning,
+                                        onCheckedChange = { togglePower(it) },
+                                        modifier = Modifier
+                                            .scale(1.3f)
+                                            .padding(end = 4.dp)
+                                    )
                                 }
-                            )
+                            }
                             if (!hasShizukuPermission && !isRootAvailable) {
+                                Spacer(modifier = Modifier.height(8.dp))
                                 SuperArrow(
                                     title = stringResource(R.string.btn_grant_permission),
                                     summary = stringResource(R.string.shizuku_permission_needed),
@@ -457,6 +863,12 @@ fun DashDazzScreen(
                                                 if (isSelected) MiuixTheme.colorScheme.primary
                                                 else MiuixTheme.colorScheme.surfaceVariant
                                             )
+                                            .semantics {
+                                                contentDescription = context.getString(
+                                                    R.string.a11y_select,
+                                                    context.getString(titleRes)
+                                                )
+                                            }
                                             .clickable {
 
                                                 selectMode(modeId)
@@ -478,7 +890,7 @@ fun DashDazzScreen(
                         }
                     }
 
-                    if (serviceState.mode == DashDazzService.MODE_RAINBOW) {
+                    if (serviceState.mode == DashDazzService.MODE_RAINBOW && !serviceState.audioReactive) {
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
@@ -571,6 +983,12 @@ fun DashDazzScreen(
                                                             color = if (isSelected) MiuixTheme.colorScheme.primary else Color.Transparent,
                                                             shape = RoundedCornerShape(12.dp)
                                                         )
+                                                        .semantics {
+                                                            contentDescription = context.getString(
+                                                                R.string.a11y_select,
+                                                                context.getString(titleRes)
+                                                            )
+                                                        }
                                                         .clickable {
                                                             DashDazzService.updateSettings(context, dualStyle = effectId)
                                                         }
@@ -635,12 +1053,19 @@ fun DashDazzScreen(
                                                         color = if (isSpotSelected) MiuixTheme.colorScheme.primary else Color.Transparent,
                                                         shape = RoundedCornerShape(10.dp)
                                                     )
+                                                    .semantics {
+                                                        contentDescription = context.getString(
+                                                            R.string.a11y_select,
+                                                            context.getString(labelRes)
+                                                        )
+                                                    }
                                                     .clickable {
                                                         activeSplitSpot = spotIndex
                                                         val hsv = FloatArray(3)
                                                         AndroidColor.colorToHSV(spotColor, hsv)
                                                         hue = hsv[0]
                                                         saturation = hsv[1]
+                                                        brightness = hsv[2]
                                                     }
                                                     .padding(horizontal = 10.dp, vertical = 10.dp)
                                             ) {
@@ -689,6 +1114,9 @@ fun DashDazzScreen(
                                                         color = if (isSelected) MiuixTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f),
                                                         shape = CircleShape
                                                     )
+                                                    .semantics {
+                                                        contentDescription = context.getString(R.string.a11y_pick_color)
+                                                    }
                                                     .clickable {
                                                         val targetColor = qColor.toArgb()
                                                         val hsv = FloatArray(3)
@@ -749,12 +1177,19 @@ fun DashDazzScreen(
                                                         color = if (isSpotSelected) MiuixTheme.colorScheme.primary else Color.Transparent,
                                                         shape = RoundedCornerShape(10.dp)
                                                     )
+                                                    .semantics {
+                                                        contentDescription = context.getString(
+                                                            R.string.a11y_select,
+                                                            context.getString(labelRes)
+                                                        )
+                                                    }
                                                     .clickable {
                                                         activeSpinSpot = spotIndex
                                                         val hsv = FloatArray(3)
                                                         AndroidColor.colorToHSV(spotColor, hsv)
                                                         hue = hsv[0]
                                                         saturation = hsv[1]
+                                                        brightness = hsv[2]
                                                     }
                                                     .padding(horizontal = 10.dp, vertical = 10.dp)
                                             ) {
@@ -803,6 +1238,9 @@ fun DashDazzScreen(
                                                         color = if (isSelected) MiuixTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f),
                                                         shape = CircleShape
                                                     )
+                                                    .semantics {
+                                                        contentDescription = context.getString(R.string.a11y_pick_color)
+                                                    }
                                                     .clickable {
                                                         val targetColor = qColor.toArgb()
                                                         val hsv = FloatArray(3)
@@ -854,28 +1292,6 @@ fun DashDazzScreen(
                                             maxValue = 360f,
                                             modifier = Modifier.weight(1f)
                                         )
-
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(20.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(AndroidColor.HSVToColor(floatArrayOf(0f, 1f, 1f))))
-                                                    .border(1.dp, Color.Gray.copy(alpha = 0.5f), CircleShape)
-                                            )
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(20.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        Color(AndroidColor.HSVToColor(floatArrayOf((duoHueOffset.toFloat() % 360f), 1f, 1f)))
-                                                    )
-                                                    .border(1.dp, Color.Gray.copy(alpha = 0.5f), CircleShape)
-                                            )
-                                        }
                                     }
 
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -900,7 +1316,11 @@ fun DashDazzScreen(
                                                         if (isPresetSelected) MiuixTheme.colorScheme.primary
                                                         else MiuixTheme.colorScheme.surfaceVariant
                                                     )
-                                                    .clickable {
+                                                    .clickable(
+                                                        onClickLabel = context.getString(
+                                                            R.string.a11y_select, label
+                                                        )
+                                                    ) {
                                                         duoHueOffset = angle
                                                         DashDazzService.updateSettings(context, duoHueOffset = angle)
                                                     }
@@ -920,6 +1340,7 @@ fun DashDazzScreen(
                                 }
 
                                 if (serviceState.dualStyle == DashDazzService.DUAL_BEAT_RAINBOW) {
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
                                         text = stringResource(R.string.title_beat_rainbow),
                                         fontSize = 14.sp,
@@ -931,6 +1352,7 @@ fun DashDazzScreen(
                                         text = stringResource(R.string.label_hue, duoHueOffset),
                                         fontSize = 13.sp
                                     )
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Slider(
                                         progress = duoHueOffset.toFloat(),
                                         onProgressChange = {
@@ -945,24 +1367,22 @@ fun DashDazzScreen(
 
                                     Spacer(modifier = Modifier.height(8.dp))
 
-                                    var currentDegrees by remember {
-                                        mutableFloatStateOf(AudioReactiveEngine.degreesPerBeat)
-                                    }
                                     Text(
                                         text = stringResource(
                                             R.string.label_degrees_per_beat,
-                                            currentDegrees.toInt()
+                                            degreesPerBeat.toInt()
                                         ),
                                         fontSize = 13.sp
                                     )
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Slider(
-                                        progress = currentDegrees,
+                                        progress = degreesPerBeat,
                                         onProgressChange = {
-                                            currentDegrees = it
+                                            degreesPerBeat = it
                                             AudioReactiveEngine.setDegreesPerBeat(context, it)
                                         },
-                                        minValue = 5f,
-                                        maxValue = 180f,
+                                        minValue = AudioReactiveEngine.MIN_DEGREES_PER_BEAT,
+                                        maxValue = AudioReactiveEngine.MAX_DEGREES_PER_BEAT,
                                         modifier = Modifier.fillMaxWidth()
                                     )
 
@@ -1027,15 +1447,25 @@ fun DashDazzScreen(
                                 )
 
                                 Spacer(modifier = Modifier.height(16.dp))
-                                if (serviceState.mode != DashDazzService.MODE_SOLID) {
 
-                                    val isSpeedDisabled = serviceState.mode == DashDazzService.MODE_SOLID ||
-                                            (serviceState.mode == DashDazzService.MODE_DUAL && (!isRootAvailable || serviceState.dualStyle == DashDazzService.DUAL_HARDWARE_SPLIT))
+                                val breatheSilicon = serviceState.mode == DashDazzService.MODE_BREATHE && isRootAvailable
+                                val isSpeedGone = serviceState.mode == DashDazzService.MODE_SOLID ||
+                                        (serviceState.mode == DashDazzService.MODE_DUAL && (!isRootAvailable || serviceState.dualStyle == DashDazzService.DUAL_HARDWARE_SPLIT)) ||
+                                        breatheSilicon
+                                if (breatheSilicon) {
+                                    Text(
+                                        text = stringResource(R.string.breathe_silicon_note),
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                                if (!isSpeedGone) {
+
                                     Text(
                                         text = stringResource(R.string.label_speed, speedMs),
-                                        fontSize = 14.sp,
-                                        color = if (isSpeedDisabled) Color.Gray else Color.Unspecified
+                                        fontSize = 14.sp
                                     )
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Slider(
                                         progress = speedMs.toFloat(),
                                         onProgressChange = { value ->
@@ -1054,28 +1484,34 @@ fun DashDazzScreen(
                                     text = stringResource(R.string.label_brightness, (brightness * 100).toInt()),
                                     fontSize = 14.sp
                                 )
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Slider(
                                     progress = brightness,
                                     onProgressChange = { value ->
                                         brightness = value
-                                        val newColor = getSelectedColor()
                                         if (serviceState.mode == DashDazzService.MODE_DUAL) {
                                             if (serviceState.dualStyle == DashDazzService.DUAL_HARDWARE_SPLIT) {
+
+                                                val base = if (activeSplitSpot == 0) serviceState.splitColorA else serviceState.splitColorB
+                                                val spot = withBrightness(base, brightness)
                                                 if (activeSplitSpot == 0) {
-                                                    DashDazzService.updateSettings(context, brightness = brightness, splitColorA = newColor)
+                                                    DashDazzService.updateSettings(context, brightness = brightness, splitColorA = spot)
                                                 } else {
-                                                    DashDazzService.updateSettings(context, brightness = brightness, splitColorB = newColor)
+                                                    DashDazzService.updateSettings(context, brightness = brightness, splitColorB = spot)
                                                 }
                                             } else if (serviceState.dualStyle == DashDazzService.DUAL_SPIN) {
+                                                val base = if (activeSpinSpot == 0) serviceState.spinColorA else serviceState.spinColorB
+                                                val spot = withBrightness(base, brightness)
                                                 if (activeSpinSpot == 0) {
-                                                    DashDazzService.updateSettings(context, brightness = brightness, spinColorA = newColor)
+                                                    DashDazzService.updateSettings(context, brightness = brightness, spinColorA = spot)
                                                 } else {
-                                                    DashDazzService.updateSettings(context, brightness = brightness, spinColorB = newColor)
+                                                    DashDazzService.updateSettings(context, brightness = brightness, spinColorB = spot)
                                                 }
                                             } else {
                                                 DashDazzService.updateSettings(context, brightness = brightness)
                                             }
                                         } else {
+                                            val newColor = getSelectedColor()
                                             DashDazzService.updateSettings(
                                                 context,
                                                 brightness = brightness,
@@ -1089,38 +1525,44 @@ fun DashDazzScreen(
                                 )
 
                                 Spacer(modifier = Modifier.height(12.dp))
-                                if (serviceState.mode != DashDazzService.MODE_RAINBOW) {
 
-                                    val isColorDisabled = serviceState.mode == DashDazzService.MODE_RAINBOW ||
-                                            (serviceState.mode == DashDazzService.MODE_DUAL &&
-                                            (!isRootAvailable ||
-                                            (serviceState.dualStyle != DashDazzService.DUAL_HARDWARE_SPLIT &&
-                                            serviceState.dualStyle != DashDazzService.DUAL_SPIN)))
+                                val isColorGone = serviceState.mode == DashDazzService.MODE_RAINBOW ||
+                                        (serviceState.mode == DashDazzService.MODE_DUAL &&
+                                        (!isRootAvailable ||
+                                        (serviceState.dualStyle != DashDazzService.DUAL_HARDWARE_SPLIT &&
+                                        serviceState.dualStyle != DashDazzService.DUAL_SPIN)))
+                                if (!isColorGone) {
+
                                     Text(
                                         text = stringResource(R.string.label_saturation, (saturation * 100).toInt()),
-                                        fontSize = 14.sp,
-                                        color = if (isColorDisabled) Color.Gray else Color.Unspecified
+                                        fontSize = 14.sp
                                     )
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Slider(
                                         progress = saturation,
                                         onProgressChange = { value ->
                                             saturation = value
-                                            val newColor = getSelectedColor()
                                             if (serviceState.mode == DashDazzService.MODE_DUAL) {
                                                 if (serviceState.dualStyle == DashDazzService.DUAL_HARDWARE_SPLIT) {
+
+                                                    val base = if (activeSplitSpot == 0) serviceState.splitColorA else serviceState.splitColorB
+                                                    val spot = withSaturation(base, saturation, brightness)
                                                     if (activeSplitSpot == 0) {
-                                                        DashDazzService.updateSettings(context, splitColorA = newColor)
+                                                        DashDazzService.updateSettings(context, splitColorA = spot)
                                                     } else {
-                                                        DashDazzService.updateSettings(context, splitColorB = newColor)
+                                                        DashDazzService.updateSettings(context, splitColorB = spot)
                                                     }
                                                 } else if (serviceState.dualStyle == DashDazzService.DUAL_SPIN) {
+                                                    val base = if (activeSpinSpot == 0) serviceState.spinColorA else serviceState.spinColorB
+                                                    val spot = withSaturation(base, saturation, brightness)
                                                     if (activeSpinSpot == 0) {
-                                                        DashDazzService.updateSettings(context, spinColorA = newColor)
+                                                        DashDazzService.updateSettings(context, spinColorA = spot)
                                                     } else {
-                                                        DashDazzService.updateSettings(context, spinColorB = newColor)
+                                                        DashDazzService.updateSettings(context, spinColorB = spot)
                                                     }
                                                 }
                                             } else {
+                                                val newColor = getSelectedColor()
                                                 DashDazzService.updateSettings(context, color = newColor)
                                             }
                                         },
@@ -1133,10 +1575,9 @@ fun DashDazzScreen(
 
                                     Text(
                                         text = stringResource(R.string.label_hue, hue.toInt()),
-                                        fontSize = 14.sp,
-                                        color = if (isColorDisabled) Color.Gray else Color.Unspecified
+                                        fontSize = 14.sp
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -1147,22 +1588,27 @@ fun DashDazzScreen(
                                             onProgressChange = { value ->
                                                 hue = value
                                                 if (saturation < 0.1f) saturation = 1f
-                                                val newColor = getSelectedColor()
                                                 if (serviceState.mode == DashDazzService.MODE_DUAL) {
                                                     if (serviceState.dualStyle == DashDazzService.DUAL_HARDWARE_SPLIT) {
+
+                                                        val base = if (activeSplitSpot == 0) serviceState.splitColorA else serviceState.splitColorB
+                                                        val spot = withHue(base, hue, brightness)
                                                         if (activeSplitSpot == 0) {
-                                                            DashDazzService.updateSettings(context, splitColorA = newColor)
+                                                            DashDazzService.updateSettings(context, splitColorA = spot)
                                                         } else {
-                                                            DashDazzService.updateSettings(context, splitColorB = newColor)
+                                                            DashDazzService.updateSettings(context, splitColorB = spot)
                                                         }
                                                     } else if (serviceState.dualStyle == DashDazzService.DUAL_SPIN) {
+                                                        val base = if (activeSpinSpot == 0) serviceState.spinColorA else serviceState.spinColorB
+                                                        val spot = withHue(base, hue, brightness)
                                                         if (activeSpinSpot == 0) {
-                                                            DashDazzService.updateSettings(context, spinColorA = newColor)
+                                                            DashDazzService.updateSettings(context, spinColorA = spot)
                                                         } else {
-                                                            DashDazzService.updateSettings(context, spinColorB = newColor)
+                                                            DashDazzService.updateSettings(context, spinColorB = spot)
                                                         }
                                                     }
                                                 } else {
+                                                    val newColor = getSelectedColor()
                                                     DashDazzService.updateSettings(context, color = newColor)
                                                 }
                                             },
@@ -1271,7 +1717,7 @@ fun DashDazzScreen(
                                             .clickable {
                                                 Prefs.saveCustomPreset(context, hue, saturation)
                                                 customPresets = Prefs.getCustomPresets(context)
-                                                Toast.makeText(context, context.getString(R.string.preset_saved), Toast.LENGTH_SHORT).show()
+                                                snack = Triple(context.getString(R.string.preset_saved), null, null)
                                             }
                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                     ) {
@@ -1315,6 +1761,8 @@ fun DashDazzScreen(
                                                     shape = CircleShape
                                                 )
                                                 .combinedClickable(
+                                                    onClickLabel = context.getString(R.string.a11y_apply_preset),
+                                                    onLongClickLabel = context.getString(R.string.a11y_delete_preset),
                                                     onClick = {
                                                         val targetColor = AndroidColor.HSVToColor(floatArrayOf(presetHue, presetSat, brightness)).let {
                                                             if (it == -1) 0xFFFEFEFE.toInt() else it
@@ -1324,9 +1772,16 @@ fun DashDazzScreen(
                                                         DashDazzService.updateSettings(context, color = targetColor)
                                                     },
                                                     onLongClick = {
+                                                        val removed = presetHue to presetSat
                                                         Prefs.removeCustomPreset(context, index)
                                                         customPresets = Prefs.getCustomPresets(context)
-                                                        Toast.makeText(context, context.getString(R.string.preset_deleted), Toast.LENGTH_SHORT).show()
+                                                        snack = Triple(
+                                                            context.getString(R.string.preset_deleted),
+                                                            context.getString(R.string.snackbar_undo)
+                                                        ) {
+                                                            Prefs.saveCustomPreset(context, removed.first, removed.second)
+                                                            customPresets = Prefs.getCustomPresets(context)
+                                                        }
                                                     }
                                                 ),
                                                 contentAlignment = Alignment.Center
@@ -1354,6 +1809,40 @@ fun DashDazzScreen(
                             }
                         }
                     }
+                    snack?.let { (message, actionLabel, onAction) ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MiuixTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = message,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (actionLabel != null && onAction != null) {
+                                    Text(
+                                        text = actionLabel,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MiuixTheme.colorScheme.primary,
+                                        modifier = Modifier.clickable {
+                                            onAction()
+                                            snack = null
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
 
                     Spacer(modifier = Modifier.height(24.dp))
                 }
@@ -1363,7 +1852,8 @@ fun DashDazzScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .animateContentSize(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
 
@@ -1394,6 +1884,12 @@ fun DashDazzScreen(
                                                 if (isSelected) MiuixTheme.colorScheme.primary
                                                 else MiuixTheme.colorScheme.surfaceVariant
                                             )
+                                            .semantics {
+                                                contentDescription = context.getString(
+                                                    R.string.a11y_select,
+                                                    context.getString(titleRes)
+                                                )
+                                            }
                                             .clickable {
                                                 onDarkModeChange(modeVal)
                                             }
@@ -1446,6 +1942,7 @@ fun DashDazzScreen(
                                             context, Manifest.permission.RECORD_AUDIO
                                         ) == PackageManager.PERMISSION_GRANTED
                                         if (!hasAudioPerm) {
+                                            pendingAudioEnable = true
                                             Toast.makeText(
                                                 context,
                                                 context.getString(R.string.audio_reactive_permission_rationale),
@@ -1454,6 +1951,8 @@ fun DashDazzScreen(
                                             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                             return@SuperSwitch
                                         }
+                                    } else {
+                                        pendingAudioEnable = false
                                     }
                                     DashDazzService.updateSettings(context, audioReactive = enabled)
                                 }
@@ -1520,6 +2019,12 @@ fun DashDazzScreen(
                                                 if (isSelected) MiuixTheme.colorScheme.primary
                                                 else MiuixTheme.colorScheme.surfaceVariant
                                             )
+                                            .semantics {
+                                                contentDescription = context.getString(
+                                                    R.string.a11y_select,
+                                                    context.getString(titleRes)
+                                                )
+                                            }
                                             .clickable {
                                                 DashDazzService.updateSettings(context, screenMode = modeVal)
                                             }
@@ -1532,6 +2037,136 @@ fun DashDazzScreen(
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                             color = if (isSelected) Color.White else MiuixTheme.colorScheme.onSurface,
                                             textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.title_frame_rate),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    Prefs.FRAME_SMOOTH_MS to R.string.frame_rate_smooth,
+                                    Prefs.FRAME_BALANCED_MS to R.string.frame_rate_balanced,
+                                    Prefs.FRAME_ECO_MS to R.string.frame_rate_eco
+                                ).forEach { (ms, titleRes) ->
+                                    val isSelected = (serviceState.frameMinMs == ms)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isSelected) MiuixTheme.colorScheme.primary
+                                                else MiuixTheme.colorScheme.surfaceVariant
+                                            )
+                                            .semantics {
+                                                contentDescription = context.getString(
+                                                    R.string.a11y_select,
+                                                    context.getString(titleRes)
+                                                )
+                                            }
+                                            .clickable {
+                                                DashDazzService.updateSettings(context, frameMinMs = ms)
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = stringResource(titleRes),
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else MiuixTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.frame_rate_desc),
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.call_title),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.call_desc),
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    Prefs.NOTIF_MODE_OFF to R.string.notif_mode_off,
+                                    Prefs.NOTIF_MODE_BLINK to R.string.notif_mode_blink,
+                                    Prefs.NOTIF_MODE_ACTIVATE to R.string.notif_mode_activate
+                                ).forEach { (modeVal, titleRes) ->
+                                    val isSelected = (callMode == modeVal)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isSelected) MiuixTheme.colorScheme.primary
+                                                else MiuixTheme.colorScheme.surfaceVariant
+                                            )
+                                            .semantics {
+                                                contentDescription = context.getString(
+                                                    R.string.a11y_select,
+                                                    context.getString(titleRes)
+                                                )
+                                            }
+                                            .clickable {
+                                                if (modeVal != Prefs.NOTIF_MODE_OFF &&
+                                                    ContextCompat.checkSelfPermission(
+                                                        context, Manifest.permission.READ_PHONE_STATE
+                                                    ) != PackageManager.PERMISSION_GRANTED
+                                                ) {
+                                                    pendingCallMode = modeVal
+                                                    Toast.makeText(
+                                                        context,
+                                                        context.getString(R.string.call_rationale),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                    callPermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                                                    return@clickable
+                                                }
+                                                callMode = modeVal
+                                                Prefs.setCallMode(context, modeVal)
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = stringResource(titleRes),
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else MiuixTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1
                                         )
                                     }
                                 }
@@ -1554,6 +2189,7 @@ fun DashDazzScreen(
                                 ) {
                                     listOf(
                                         Prefs.NOTIF_MODE_OFF to R.string.notif_mode_off,
+                                        Prefs.NOTIF_MODE_BLINK to R.string.notif_mode_blink,
                                         Prefs.NOTIF_MODE_ACTIVATE to R.string.notif_mode_activate
                                     ).forEach { (modeVal, titleRes) ->
                                         val isSelected = (serviceState.notifMode == modeVal)
@@ -1565,12 +2201,21 @@ fun DashDazzScreen(
                                                     if (isSelected) MiuixTheme.colorScheme.primary
                                                     else MiuixTheme.colorScheme.surfaceVariant
                                                 )
+                                                .semantics {
+                                                    contentDescription = context.getString(
+                                                        R.string.a11y_select,
+                                                        context.getString(titleRes)
+                                                    )
+                                                }
                                                 .clickable {
-                                                    if ((modeVal == Prefs.NOTIF_MODE_ACTIVATE) &&
+                                                    if ((modeVal == Prefs.NOTIF_MODE_ACTIVATE ||
+                                                        modeVal == Prefs.NOTIF_MODE_BLINK) &&
                                                         !DashDazzNotificationListener.isNotificationAccessGranted(context)
                                                     ) {
                                                         DashDazzNotificationListener.openNotificationAccessSettings(context)
                                                         Toast.makeText(context, R.string.btn_grant_notif_access, Toast.LENGTH_LONG).show()
+
+                                                        return@clickable
                                                     }
                                                     DashDazzService.updateSettings(context, notifMode = modeVal)
                                                 }
@@ -1593,12 +2238,26 @@ fun DashDazzScreen(
                                     text = stringResource(
                                         when (serviceState.notifMode) {
                                             Prefs.NOTIF_MODE_ACTIVATE -> R.string.notif_mode_activate_desc
+                                            Prefs.NOTIF_MODE_BLINK -> R.string.notif_mode_blink_desc
                                             else -> R.string.notif_mode_off_desc
                                         }
                                     ),
                                     fontSize = 12.sp,
                                     color = Color.Gray,
                                     modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SuperArrow(
+                                    title = stringResource(R.string.notif_apps_title),
+                                    summary = if (allowedApps.isEmpty()) {
+                                        stringResource(R.string.notif_apps_all)
+                                    } else {
+                                        stringResource(R.string.notif_apps_count, allowedApps.size)
+                                    },
+                                    onClick = {
+                                        allowedApps = Prefs.getNotifApps(context)
+                                        showAppPicker = true
+                                    }
                                 )
 
                                 if (serviceState.notifMode == Prefs.NOTIF_MODE_ACTIVATE) {
@@ -1608,7 +2267,7 @@ fun DashDazzScreen(
                                         fontSize = 14.sp,
                                         modifier = Modifier.padding(horizontal = 16.dp)
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Slider(
                                         progress = notifDuration.toFloat(),
                                         onProgressChange = { value ->
@@ -1705,16 +2364,161 @@ fun DashDazzScreen(
             }
 
             if (showAudioTuningDialog) {
-                AudioTuningDialog(onDismiss = { showAudioTuningDialog = false })
+                AudioTuningDialog(
+                    onDismiss = { showAudioTuningDialog = false },
+                    onResetDefaults = { degreesPerBeat = AudioReactiveEngine.DEFAULT_DEGREES_PER_BEAT }
+                )
+            }
+            if (showAppPicker) {
+                NotifAppPickerDialog(
+                    allowed = allowedApps,
+                    onChange = {
+                        allowedApps = it
+                        Prefs.setNotifApps(context, it)
+                    },
+                    onDismiss = { showAppPicker = false }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AudioTuningDialog(onDismiss: () -> Unit) {
+fun NotifAppPickerDialog(
+    allowed: Set<String>,
+    onChange: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val pm = context.packageManager
+    val apps = remember {
+        runCatching {
+            pm.queryIntentActivities(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0
+            ).mapNotNull { it.activityInfo }
+                .filter { it.packageName != context.packageName }
+                .distinctBy { it.packageName }
+                .sortedBy { it.loadLabel(pm).toString().lowercase() }
+        }.getOrDefault(emptyList())
+    }
+    val effective = if (allowed.isEmpty()) apps.map { it.packageName }.toSet() else allowed
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.notif_apps_title),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MiuixTheme.colorScheme.onSurface
+                )
+                SuperSwitch(
+                    title = stringResource(R.string.notif_apps_all),
+                    summary = stringResource(R.string.notif_apps_all_desc),
+                    checked = allowed.isEmpty(),
+                    onCheckedChange = { on -> if (on) onChange(emptySet()) }
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(apps, key = { it.packageName }) { info ->
+                        val pkg = info.packageName
+                        val on = pkg in effective
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onChange(if (on) effective - pkg else effective + pkg) }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            val icon = remember(pkg) {
+                                runCatching {
+                                    pm.getApplicationIcon(pkg).toBitmap().asImageBitmap()
+                                }.getOrNull()
+                            }
+                            if (icon != null) {
+                                Image(
+                                    bitmap = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            } else {
+                                Box(
+                                    Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(MiuixTheme.colorScheme.surfaceVariant)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = info.loadLabel(pm).toString(),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = pkg,
+                                    fontSize = 10.sp,
+                                    color = Color.Gray,
+                                    maxLines = 1
+                                )
+                            }
+                            Box(
+                                Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (on) MiuixTheme.colorScheme.primary
+                                        else Color.Gray.copy(alpha = 0.35f)
+                                    )
+                            )
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MiuixTheme.colorScheme.primary)
+                        .clickable { onDismiss() }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.btn_close),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AudioTuningDialog(    onDismiss: () -> Unit,
+    onResetDefaults: () -> Unit
+) {
     val context = LocalContext.current
     val diag by AudioReactiveEngine.diagnostics.collectAsState()
+
+    LaunchedEffect(Unit) { AudioReactiveEngine.ensurePreview(context) }
+    DisposableEffect(Unit) { onDispose { AudioReactiveEngine.endPreview() } }
 
     var currentGain by remember { mutableFloatStateOf(AudioReactiveEngine.gainMultiplier) }
     var currentThreshold by remember { mutableFloatStateOf(AudioReactiveEngine.beatThreshold) }
@@ -1896,6 +2700,12 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                                     if (selected) MiuixTheme.colorScheme.primary
                                     else MiuixTheme.colorScheme.surfaceVariant
                                 )
+                                .semantics {
+                                    contentDescription = context.getString(
+                                        R.string.a11y_select,
+                                        context.getString(labelRes)
+                                    )
+                                }
                                 .clickable {
                                     AudioReactiveEngine.setSource(context, source)
                                 }
@@ -1913,6 +2723,7 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                     }
                 }
 
+                SectionDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1965,6 +2776,12 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                                     if (selected) MiuixTheme.colorScheme.primary
                                     else MiuixTheme.colorScheme.surfaceVariant
                                 )
+                                .semantics {
+                                    contentDescription = context.getString(
+                                        R.string.a11y_select,
+                                        context.getString(labelRes)
+                                    )
+                                }
                                 .clickable { AudioReactiveEngine.setBandMode(context, mode) }
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
@@ -2000,12 +2817,20 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         bandPresets.forEach { (labelRes, range) ->
-                            val isSel = (currentMinHz == range.first && currentMaxHz == range.second)
+
+                            val isSel = (Math.abs(currentMinHz - range.first) < 1f &&
+                                    Math.abs(currentMaxHz - range.second) < 1f)
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(if (isSel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceVariant)
+                                    .semantics {
+                                        contentDescription = context.getString(
+                                            R.string.a11y_select,
+                                            context.getString(labelRes)
+                                        )
+                                    }
                                     .clickable {
                                         currentMinHz = range.first
                                         currentMaxHz = range.second
@@ -2028,6 +2853,7 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                         text = stringResource(R.string.audio_min_freq, currentMinHz.toInt()),
                         fontSize = 11.sp
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
                     Slider(
                         progress = currentMinHz,
                         onProgressChange = {
@@ -2044,6 +2870,7 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                         text = stringResource(R.string.audio_max_freq, currentMaxHz.toInt()),
                         fontSize = 11.sp
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
                     Slider(
                         progress = currentMaxHz,
                         onProgressChange = {
@@ -2057,6 +2884,7 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                     )
                 }
 
+                SectionDivider()
                 val autoSensitivity by AudioReactiveEngine.autoSensitivityFlow.collectAsState()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2081,6 +2909,12 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                                         if (selected) MiuixTheme.colorScheme.primary
                                         else MiuixTheme.colorScheme.surfaceVariant
                                     )
+                                    .semantics {
+                                        contentDescription = context.getString(
+                                            R.string.a11y_select,
+                                            context.getString(labelRes)
+                                        )
+                                    }
                                     .clickable {
                                         AudioReactiveEngine.setAutoSensitivity(context, auto)
                                     }
@@ -2114,6 +2948,7 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                     text = stringResource(R.string.audio_gain, "%.2f".format(currentGain)),
                     fontSize = 11.sp
                 )
+                Spacer(modifier = Modifier.height(6.dp))
                 Slider(
                     progress = currentGain,
                     onProgressChange = {
@@ -2130,6 +2965,7 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                     text = stringResource(R.string.audio_beat_threshold, "%.2f".format(currentThreshold)),
                     fontSize = 11.sp
                 )
+                Spacer(modifier = Modifier.height(6.dp))
                 Slider(
                     progress = currentThreshold,
                     onProgressChange = {
@@ -2139,22 +2975,6 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                     enabled = !autoSensitivity,
                     minValue = 1.05f,
                     maxValue = 1.6f,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                var currentDegrees by remember { mutableFloatStateOf(AudioReactiveEngine.degreesPerBeat) }
-                Text(
-                    text = stringResource(R.string.label_degrees_per_beat, currentDegrees.toInt()),
-                    fontSize = 11.sp
-                )
-                Slider(
-                    progress = currentDegrees,
-                    onProgressChange = {
-                        currentDegrees = it
-                        AudioReactiveEngine.setDegreesPerBeat(context, it)
-                    },
-                    minValue = 5f,
-                    maxValue = 180f,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -2177,7 +2997,10 @@ fun AudioTuningDialog(onDismiss: () -> Unit) {
                             AudioReactiveEngine.setFrequencyRange(context, 5000f, 14000f)
                             AudioReactiveEngine.setBandMode(context, AudioReactiveEngine.BAND_MODE_AUTO)
                             AudioReactiveEngine.setAutoSensitivity(context, true)
-                            AudioReactiveEngine.setDegreesPerBeat(context, 30f)
+                            AudioReactiveEngine.setDegreesPerBeat(
+                                context, AudioReactiveEngine.DEFAULT_DEGREES_PER_BEAT
+                            )
+                            onResetDefaults()
                             DashDazzService.updateSettings(context, duoHueOffset = 90)
                         }
                         .padding(vertical = 10.dp),

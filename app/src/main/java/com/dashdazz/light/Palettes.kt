@@ -75,6 +75,9 @@ object Palettes {
         )
     )
 
+    fun sanitize(argb: Int): Int =
+        if (argb == -1) 0xFFFEFEFE.toInt() else argb
+
     fun interpolate(
         c1: Int,
         c2: Int,
@@ -82,23 +85,32 @@ object Palettes {
         brightness: Float,
         saturationScale: Float = 1f
     ): Int {
+        val t = ratio.coerceIn(0f, 1f)
+        val bright = if (brightness.isNaN()) 1f else brightness
+        val satScale = if (saturationScale.isNaN()) 1f else saturationScale
         val hsv1 = FloatArray(3)
         val hsv2 = FloatArray(3)
         android.graphics.Color.colorToHSV(c1, hsv1)
         android.graphics.Color.colorToHSV(c2, hsv2)
 
-        var diff = hsv2[0] - hsv1[0]
-        if (diff > 180f) diff -= 360f
-        else if (diff < -180f) diff += 360f
+        val achromatic = hsv1[1] < 0.02f || hsv2[1] < 0.02f
+        var h: Float
+        if (achromatic) {
+            h = if (hsv1[1] >= hsv2[1]) hsv1[0] else hsv2[0]
+        } else {
 
-        var h = (hsv1[0] + diff * ratio) % 360f
-        if (h < 0f) h += 360f
+            var diff = hsv2[0] - hsv1[0]
+            if (diff > 180f) diff -= 360f
+            else if (diff < -180f) diff += 360f
+            h = (hsv1[0] + diff * t) % 360f
+            if (h < 0f) h += 360f
+        }
 
-        val s = (((hsv1[1] + (hsv2[1] - hsv1[1]) * ratio) * saturationScale)).coerceIn(0.01f, 1f)
-        val v = ((hsv1[2] + (hsv2[2] - hsv1[2]) * ratio) * brightness).coerceIn(0.01f, 1f)
+        val s = (((hsv1[1] + (hsv2[1] - hsv1[1]) * t) * satScale)).coerceIn(0f, 1f)
+        val v = ((hsv1[2] + (hsv2[2] - hsv1[2]) * t) * bright).coerceIn(0f, 1f)
 
         val out = android.graphics.Color.HSVToColor(floatArrayOf(h, s, v))
 
-        return if (out == -1) 0xFFFEFEFE.toInt() else out
+        return sanitize(out)
     }
 }

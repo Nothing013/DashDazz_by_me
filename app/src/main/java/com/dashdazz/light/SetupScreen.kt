@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
@@ -47,6 +48,28 @@ fun SetupScreen(
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.primary)
+                )
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.surfaceVariant)
+                )
+                Text(
+                    text = stringResource(R.string.setup_step),
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
             Text(
                 text = stringResource(R.string.setup_desc),
                 fontSize = 14.sp,

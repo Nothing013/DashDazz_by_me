@@ -23,7 +23,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.sin
 
 data class DashDazzState(
@@ -45,7 +48,9 @@ data class DashDazzState(
     val notifMode: Int = 0,
     val notifActivateDuration: Int = 5,
 
-    val audioReactive: Boolean = false
+    val audioReactive: Boolean = false,
+
+    val frameMinMs: Long = 20L
 )
 
 class DashDazzService : Service() {
@@ -75,6 +80,7 @@ class DashDazzService : Service() {
         const val EXTRA_NOTIF_MODE = "extra_notif_mode"
         const val EXTRA_NOTIF_ACTIVATE_DURATION = "extra_notif_activate_duration"
         const val EXTRA_ACTIVATE_DURATION = "extra_activate_duration"
+        const val EXTRA_FRAME_MIN_MS = "extra_frame_min_ms"
 
         const val MODE_RAINBOW = 0
         const val MODE_BREATHE = 1
@@ -131,39 +137,42 @@ class DashDazzService : Service() {
 
         fun start(
             context: Context,
-            mode: Int = _stateFlow.value.mode,
-            color: Int = _stateFlow.value.color,
-            speedMs: Long = _stateFlow.value.speedMs,
-            brightness: Float = _stateFlow.value.brightness,
-            screenMode: Int = _stateFlow.value.screenMode,
-            blinkOnNotification: Boolean = _stateFlow.value.blinkOnNotification,
-            palette: Int = _stateFlow.value.palette,
-            dualStyle: Int = _stateFlow.value.dualStyle,
-            splitColorA: Int = _stateFlow.value.splitColorA,
-            splitColorB: Int = _stateFlow.value.splitColorB,
-            spinColorA: Int = _stateFlow.value.spinColorA,
-            spinColorB: Int = _stateFlow.value.spinColorB,
-            duoHueOffset: Int = _stateFlow.value.duoHueOffset,
-            notifMode: Int = _stateFlow.value.notifMode,
-            notifActivateDuration: Int = _stateFlow.value.notifActivateDuration
+            mode: Int? = null,
+            color: Int? = null,
+            speedMs: Long? = null,
+            brightness: Float? = null,
+            screenMode: Int? = null,
+            blinkOnNotification: Boolean? = null,
+            palette: Int? = null,
+            dualStyle: Int? = null,
+            splitColorA: Int? = null,
+            splitColorB: Int? = null,
+            spinColorA: Int? = null,
+            spinColorB: Int? = null,
+            duoHueOffset: Int? = null,
+            notifMode: Int? = null,
+            notifActivateDuration: Int? = null
         ) {
+
+            val s = _stateFlow.value
             val intent = Intent(context, DashDazzService::class.java).apply {
                 action = ACTION_START
-                putExtra(EXTRA_MODE, mode)
-                putExtra(EXTRA_COLOR, color)
-                putExtra(EXTRA_SPEED_MS, speedMs)
-                putExtra(EXTRA_BRIGHTNESS, brightness)
-                putExtra(EXTRA_SCREEN_MODE, screenMode)
-                putExtra(EXTRA_BLINK_NOTIFICATION, blinkOnNotification)
-                putExtra(EXTRA_PALETTE, palette)
-                putExtra(EXTRA_DUAL_STYLE, dualStyle)
-                putExtra(EXTRA_SPLIT_COLOR_A, splitColorA)
-                putExtra(EXTRA_SPLIT_COLOR_B, splitColorB)
-                putExtra(EXTRA_SPIN_COLOR_A, spinColorA)
-                putExtra(EXTRA_SPIN_COLOR_B, spinColorB)
-                putExtra(EXTRA_DUO_HUE_OFFSET, duoHueOffset)
-                putExtra(EXTRA_NOTIF_MODE, notifMode)
-                putExtra(EXTRA_NOTIF_ACTIVATE_DURATION, notifActivateDuration)
+                putExtra(EXTRA_MODE, mode ?: s.mode)
+                putExtra(EXTRA_COLOR, color ?: s.color)
+                putExtra(EXTRA_SPEED_MS, speedMs ?: s.speedMs)
+                putExtra(EXTRA_BRIGHTNESS, brightness ?: s.brightness)
+                putExtra(EXTRA_SCREEN_MODE, screenMode ?: s.screenMode)
+                putExtra(EXTRA_BLINK_NOTIFICATION, blinkOnNotification ?: s.blinkOnNotification)
+                putExtra(EXTRA_PALETTE, palette ?: s.palette)
+                putExtra(EXTRA_DUAL_STYLE, dualStyle ?: s.dualStyle)
+                putExtra(EXTRA_SPLIT_COLOR_A, splitColorA ?: s.splitColorA)
+                putExtra(EXTRA_SPLIT_COLOR_B, splitColorB ?: s.splitColorB)
+                putExtra(EXTRA_SPIN_COLOR_A, spinColorA ?: s.spinColorA)
+                putExtra(EXTRA_SPIN_COLOR_B, spinColorB ?: s.spinColorB)
+                putExtra(EXTRA_DUO_HUE_OFFSET, duoHueOffset ?: s.duoHueOffset)
+                putExtra(EXTRA_NOTIF_MODE, notifMode ?: s.notifMode)
+                putExtra(EXTRA_NOTIF_ACTIVATE_DURATION, notifActivateDuration ?: s.notifActivateDuration)
+                putExtra(EXTRA_FRAME_MIN_MS, s.frameMinMs)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -176,7 +185,11 @@ class DashDazzService : Service() {
             val intent = Intent(context, DashDazzService::class.java).apply {
                 action = ACTION_STOP
             }
-            context.startService(intent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
 
         fun updateSettings(
@@ -196,7 +209,8 @@ class DashDazzService : Service() {
             duoHueOffset: Int? = null,
             notifMode: Int? = null,
             notifActivateDuration: Int? = null,
-            audioReactive: Boolean? = null
+            audioReactive: Boolean? = null,
+            frameMinMs: Long? = null
         ) {
             val current = _stateFlow.value
             val newMode = mode ?: current.mode
@@ -215,74 +229,81 @@ class DashDazzService : Service() {
             val newNotifMode = notifMode ?: current.notifMode
             val newNotifActivateDuration = notifActivateDuration ?: current.notifActivateDuration
             val newAudioReactive = audioReactive ?: current.audioReactive
-
-            Prefs.setMode(context, newMode)
-            Prefs.setColor(context, newColor)
-            Prefs.setSpeedMs(context, newSpeed)
-            Prefs.setBrightness(context, newBrightness)
-            Prefs.setScreenMode(context, newScreenMode)
-            Prefs.setBlinkOnNotification(context, newBlink)
-            Prefs.setPalette(context, newPalette)
-            Prefs.setDualStyle(context, newDualStyle)
-            Prefs.setSplitColorA(context, newSplitColorA)
-            Prefs.setSplitColorB(context, newSplitColorB)
-            Prefs.setSpinColorA(context, newSpinColorA)
-            Prefs.setSpinColorB(context, newSpinColorB)
-            Prefs.setDuoHueOffset(context, newDuoHueOffset)
-            Prefs.setNotificationMode(context, newNotifMode)
-            Prefs.setNotificationActivateDuration(context, newNotifActivateDuration)
-            Prefs.setAudioReactive(context, newAudioReactive)
+            val newFrameMinMs = frameMinMs?.coerceIn(15L, 100L) ?: current.frameMinMs
 
             val modeChanged = (newMode != current.mode)
             val dualStyleChanged = (newDualStyle != current.dualStyle)
             val audioChanged = (newAudioReactive != current.audioReactive)
             val splitColorsChanged = (newSplitColorA != current.splitColorA || newSplitColorB != current.splitColorB)
 
-            _stateFlow.update {
-                it.copy(
-                    mode = newMode,
-                    color = newColor,
-                    speedMs = newSpeed,
-                    brightness = newBrightness,
-                    screenMode = newScreenMode,
-                    blinkOnNotification = newBlink,
-                    palette = newPalette,
-                    dualStyle = newDualStyle,
-                    splitColorA = newSplitColorA,
-                    splitColorB = newSplitColorB,
-                    spinColorA = newSpinColorA,
-                    spinColorB = newSpinColorB,
-                    duoHueOffset = newDuoHueOffset,
-                    notifMode = newNotifMode,
-                    notifActivateDuration = newNotifActivateDuration,
-                    audioReactive = newAudioReactive
-                )
-            }
+            val merged = current.copy(
+                mode = newMode,
+                color = newColor,
+                speedMs = newSpeed.coerceIn(10L, 500L),
+                brightness = newBrightness,
+                screenMode = newScreenMode,
+                blinkOnNotification = newBlink,
+                palette = newPalette,
+                dualStyle = newDualStyle,
+                splitColorA = newSplitColorA,
+                splitColorB = newSplitColorB,
+                spinColorA = newSpinColorA,
+                spinColorB = newSpinColorB,
+                duoHueOffset = newDuoHueOffset,
+                notifMode = newNotifMode,
+                notifActivateDuration = newNotifActivateDuration,
+                audioReactive = newAudioReactive,
+                frameMinMs = newFrameMinMs
+            )
+            Prefs.saveAll(context, merged)
 
+            _stateFlow.update { merged }
+
+            val svc = activeService
             if (current.isRunning && newMode == MODE_DUAL && newDualStyle == DUAL_HARDWARE_SPLIT && splitColorsChanged) {
-                if (LightsBridge.isRootAvailable()) {
-                    LightsBridge.setDualSpotColors(newSplitColorA, newSplitColorB, full = false)
+                if (svc != null) {
+                    svc.ioScope.launch {
+                        if (LightsBridge.isRootAvailable()) {
+                            LightsBridge.setDualSpotColors(newSplitColorA, newSplitColorB, full = false)
+                        }
+                    }
                 }
             }
 
-            if (current.isRunning &&
+            val target = activeService
+            if (target == null && current.isRunning) {
+
+                start(
+                    context, mode = newMode, color = newColor, speedMs = newSpeed,
+                    brightness = newBrightness, screenMode = newScreenMode,
+                    blinkOnNotification = newBlink, palette = newPalette,
+                    dualStyle = newDualStyle, splitColorA = newSplitColorA,
+                    splitColorB = newSplitColorB, spinColorA = newSpinColorA,
+                    spinColorB = newSpinColorB, duoHueOffset = newDuoHueOffset,
+                    notifMode = newNotifMode, notifActivateDuration = newNotifActivateDuration
+                )
+            } else if (current.isRunning &&
                 (modeChanged || audioChanged || (newMode == MODE_DUAL && dualStyleChanged))
             ) {
                 if (newScreenMode == SCREEN_NOTIF_ONLY) {
 
                     _stateFlow.update { it.copy(isScreenPaused = true) }
-                    activeService?.pauseAnimationForScreenOff()
+                    target?.pauseAnimationForScreenOff()
                 } else {
-                    activeService?.launchAnimationLoop()
+                    target?.launchAnimationLoop()
                 }
+                target?.updateNotificationText()
+                target?.let { notifyTileState(context) }
             } else if (current.isRunning && newScreenMode != current.screenMode) {
                 if (newScreenMode == SCREEN_NOTIF_ONLY) {
 
                     _stateFlow.update { it.copy(isScreenPaused = true) }
-                    activeService?.pauseAnimationForScreenOff()
+                    target?.pauseAnimationForScreenOff()
                 } else {
-                    activeService?.evaluateScreenPolicy()
+                    target?.evaluateScreenPolicy()
                 }
+                target?.updateNotificationText()
+                target?.let { notifyTileState(context) }
             }
         }
 
@@ -316,7 +337,8 @@ class DashDazzService : Service() {
                     duoHueOffset = saved.duoHueOffset,
                     notifMode = saved.notifMode,
                     notifActivateDuration = saved.notifActivateDuration,
-                    audioReactive = saved.audioReactive
+                    audioReactive = saved.audioReactive,
+                    frameMinMs = saved.frameMinMs
                 )
             }
         }
@@ -345,9 +367,6 @@ class DashDazzService : Service() {
                 context.startService(intent)
             }
         }
-
-        @Volatile
-        private var activateJob: Job? = null
 
         fun notifyTileState(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -385,7 +404,17 @@ class DashDazzService : Service() {
         }
     }
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    internal val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val animationMutex = Mutex()
+    @Volatile
+    private var pulseGen = 0L
+    @Volatile
+    private var activateGen = 0L
+    @Volatile
+    private var activateJob: Job? = null
     private var job: Job? = null
     private var pulseJob: Job? = null
     private var screenReceiverRegistered = false
@@ -410,13 +439,13 @@ class DashDazzService : Service() {
                     }
                 }
                 Intent.ACTION_POWER_CONNECTED -> {
-                    if (stillRunning()) {
+                    if (stillRunning() && shouldRunNow()) {
                         Log.d(TAG, "Power connected: taking the ring back once")
                         launchAnimationLoop()
                     }
                 }
                 Intent.ACTION_POWER_DISCONNECTED -> {
-                    if (stillRunning()) {
+                    if (stillRunning() && shouldRunNow()) {
                         Log.d(TAG, "Power disconnected: taking the ring back once")
                         launchAnimationLoop()
                     }
@@ -443,12 +472,21 @@ class DashDazzService : Service() {
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
         }
-        registerReceiver(screenReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(screenReceiver, filter)
+        }
         screenReceiverRegistered = true
+
+        if (_stateFlow.value.isRunning) evaluateScreenPolicy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action ?: ACTION_START
+
+        if (intent == null) return START_STICKY
+        val action = intent.action ?: return START_STICKY
 
         when (action) {
             ACTION_STOP -> {
@@ -456,52 +494,59 @@ class DashDazzService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_PULSE -> {
-                val pulseColor = intent?.getIntExtra(EXTRA_COLOR, _stateFlow.value.color) ?: _stateFlow.value.color
+                if (Prefs.getNotificationMode(this) == Prefs.NOTIF_MODE_OFF) {
+                    return START_NOT_STICKY
+                }
+                val pulseColor = intent.getIntExtra(EXTRA_COLOR, _stateFlow.value.color)
                 handleNotificationPulse(pulseColor)
-                return START_STICKY
+                return START_NOT_STICKY
             }
             ACTION_ACTIVATE -> {
-                val durationSec = intent?.getIntExtra(EXTRA_ACTIVATE_DURATION, Prefs.getNotificationActivateDuration(this))
-                    ?: Prefs.getNotificationActivateDuration(this)
+                if (Prefs.getNotificationMode(this) == Prefs.NOTIF_MODE_OFF) {
+                    return START_NOT_STICKY
+                }
+                val durationSec = intent.getIntExtra(
+                    EXTRA_ACTIVATE_DURATION, Prefs.getNotificationActivateDuration(this)
+                ).coerceIn(1, 60)
                 handleActivateForNotification(durationSec)
-                return START_STICKY
+                return START_NOT_STICKY
             }
             ACTION_START, ACTION_UPDATE -> {
-                val newMode = intent?.getIntExtra(EXTRA_MODE, _stateFlow.value.mode) ?: _stateFlow.value.mode
-                val newColor = intent?.getIntExtra(EXTRA_COLOR, _stateFlow.value.color) ?: _stateFlow.value.color
-                val newSpeed = intent?.getLongExtra(EXTRA_SPEED_MS, _stateFlow.value.speedMs) ?: _stateFlow.value.speedMs
-                val newBrightness = intent?.getFloatExtra(EXTRA_BRIGHTNESS, _stateFlow.value.brightness) ?: _stateFlow.value.brightness
-                val newScreenMode = intent?.getIntExtra(EXTRA_SCREEN_MODE, _stateFlow.value.screenMode) ?: _stateFlow.value.screenMode
-                val newBlinkNotif = intent?.getBooleanExtra(EXTRA_BLINK_NOTIFICATION, _stateFlow.value.blinkOnNotification) ?: _stateFlow.value.blinkOnNotification
-                val newPalette = intent?.getIntExtra(EXTRA_PALETTE, _stateFlow.value.palette) ?: _stateFlow.value.palette
-                val newDualStyle = intent?.getIntExtra(EXTRA_DUAL_STYLE, _stateFlow.value.dualStyle) ?: _stateFlow.value.dualStyle
-                val newSplitColorA = intent?.getIntExtra(EXTRA_SPLIT_COLOR_A, Prefs.getSplitColorA(this)) ?: Prefs.getSplitColorA(this)
-                val newSplitColorB = intent?.getIntExtra(EXTRA_SPLIT_COLOR_B, Prefs.getSplitColorB(this)) ?: Prefs.getSplitColorB(this)
-                val newSpinColorA = intent?.getIntExtra(EXTRA_SPIN_COLOR_A, Prefs.getSpinColorA(this)) ?: Prefs.getSpinColorA(this)
-                val newSpinColorB = intent?.getIntExtra(EXTRA_SPIN_COLOR_B, Prefs.getSpinColorB(this)) ?: Prefs.getSpinColorB(this)
-                val newDuoHueOffset = intent?.getIntExtra(EXTRA_DUO_HUE_OFFSET, Prefs.getDuoHueOffset(this)) ?: Prefs.getDuoHueOffset(this)
-                val newNotifMode = intent?.getIntExtra(EXTRA_NOTIF_MODE, Prefs.getNotificationMode(this)) ?: Prefs.getNotificationMode(this)
-                val newNotifActivateDuration = intent?.getIntExtra(EXTRA_NOTIF_ACTIVATE_DURATION, Prefs.getNotificationActivateDuration(this)) ?: Prefs.getNotificationActivateDuration(this)
+
+                val s = _stateFlow.value
+                val newMode = intent.getIntExtra(EXTRA_MODE, s.mode)
+                val newColor = intent.getIntExtra(EXTRA_COLOR, s.color)
+                val newSpeed = intent.getLongExtra(EXTRA_SPEED_MS, s.speedMs).coerceIn(10L, 500L)
+                val newBrightness = intent.getFloatExtra(EXTRA_BRIGHTNESS, s.brightness)
+                val newScreenMode = intent.getIntExtra(EXTRA_SCREEN_MODE, s.screenMode).coerceIn(0, 3)
+                val newBlinkNotif = intent.getBooleanExtra(EXTRA_BLINK_NOTIFICATION, s.blinkOnNotification)
+                val newPalette = intent.getIntExtra(EXTRA_PALETTE, s.palette)
+                val newDualStyle = intent.getIntExtra(EXTRA_DUAL_STYLE, s.dualStyle)
+                val newSplitColorA = intent.getIntExtra(EXTRA_SPLIT_COLOR_A, Prefs.getSplitColorA(this))
+                val newSplitColorB = intent.getIntExtra(EXTRA_SPLIT_COLOR_B, Prefs.getSplitColorB(this))
+                val newSpinColorA = intent.getIntExtra(EXTRA_SPIN_COLOR_A, Prefs.getSpinColorA(this))
+                val newSpinColorB = intent.getIntExtra(EXTRA_SPIN_COLOR_B, Prefs.getSpinColorB(this))
+                val newDuoHueOffset = intent.getIntExtra(EXTRA_DUO_HUE_OFFSET, Prefs.getDuoHueOffset(this)).coerceIn(0, 360)
+                val newNotifMode = intent.getIntExtra(EXTRA_NOTIF_MODE, Prefs.getNotificationMode(this))
+                    .coerceIn(Prefs.NOTIF_MODE_OFF, Prefs.NOTIF_MODE_ACTIVATE)
+                val newNotifActivateDuration = intent.getIntExtra(EXTRA_NOTIF_ACTIVATE_DURATION, Prefs.getNotificationActivateDuration(this))
+                    .coerceIn(1, 60)
 
                 val wasRunning = _stateFlow.value.isRunning
                 val modeChanged = (newMode != _stateFlow.value.mode)
                 val dualStyleChanged = (newDualStyle != _stateFlow.value.dualStyle)
 
-                Prefs.setMode(this, newMode)
-                Prefs.setColor(this, newColor)
-                Prefs.setSpeedMs(this, newSpeed)
-                Prefs.setBrightness(this, newBrightness)
-                Prefs.setScreenMode(this, newScreenMode)
-                Prefs.setBlinkOnNotification(this, newBlinkNotif)
-                Prefs.setPalette(this, newPalette)
-                Prefs.setDualStyle(this, newDualStyle)
-                Prefs.setSplitColorA(this, newSplitColorA)
-                Prefs.setSplitColorB(this, newSplitColorB)
-                Prefs.setSpinColorA(this, newSpinColorA)
-                Prefs.setSpinColorB(this, newSpinColorB)
-                Prefs.setDuoHueOffset(this, newDuoHueOffset)
-                Prefs.setNotificationMode(this, newNotifMode)
-                Prefs.setNotificationActivateDuration(this, newNotifActivateDuration)
+                Prefs.saveAll(
+                    this, _stateFlow.value.copy(
+                        mode = newMode, color = newColor, speedMs = newSpeed,
+                        brightness = newBrightness, screenMode = newScreenMode,
+                        blinkOnNotification = newBlinkNotif, palette = newPalette,
+                        dualStyle = newDualStyle, splitColorA = newSplitColorA,
+                        splitColorB = newSplitColorB, spinColorA = newSpinColorA,
+                        spinColorB = newSpinColorB, duoHueOffset = newDuoHueOffset,
+                        notifMode = newNotifMode, notifActivateDuration = newNotifActivateDuration
+                    )
+                )
 
                 _stateFlow.update {
                     it.copy(
@@ -535,11 +580,12 @@ class DashDazzService : Service() {
                     return START_STICKY
                 }
 
-                if (!wasRunning || modeChanged || (newMode == MODE_DUAL && dualStyleChanged) || job == null || !job!!.isActive) {
+                if (!wasRunning || modeChanged || (newMode == MODE_DUAL && dualStyleChanged) || job?.isActive != true) {
                     launchAnimationLoop()
                 } else {
                     evaluateScreenPolicy()
                 }
+                updateNotificationText()
                 notifyTileState(this)
                 return START_STICKY
             }
@@ -570,19 +616,23 @@ class DashDazzService : Service() {
         return if (needsMic) special or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else special
     }
 
-    private fun updateNotificationText() {
+    internal fun updateNotificationText() {
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager?.notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun pauseAnimationForScreenOff() {
-        job?.cancel()
         scope.launch {
-            withContext(NonCancellable) {
-                LightsBridge.turnOff()
+            animationMutex.withLock {
+                job?.cancelAndJoin()
+                job = null
+                withContext(NonCancellable) {
+                    LightsBridge.turnOff()
+                }
             }
         }
         updateNotificationText()
+        notifyTileState(this)
     }
 
     private fun resumeAnimationForScreenOn() {
@@ -597,7 +647,7 @@ class DashDazzService : Service() {
         else -> true
     }
 
-    private fun evaluateScreenPolicy() {
+    internal fun evaluateScreenPolicy() {
         if (!_stateFlow.value.isRunning) return
         if (shouldRunNow()) {
             if (_stateFlow.value.isScreenPaused || job?.isActive != true) {
@@ -608,9 +658,10 @@ class DashDazzService : Service() {
             _stateFlow.update { it.copy(isScreenPaused = true) }
             pauseAnimationForScreenOff()
         }
+        notifyTileState(this)
     }
 
-    private fun launchAnimationLoop() {
+    internal fun launchAnimationLoop() {
         if (!shouldRunNow()) {
             if (!_stateFlow.value.isScreenPaused) {
                 _stateFlow.update { it.copy(isScreenPaused = true) }
@@ -619,18 +670,27 @@ class DashDazzService : Service() {
             return
         }
         _stateFlow.update { it.copy(isScreenPaused = false) }
-        job?.cancel()
-        job = scope.launch {
-            startAudioEngineIfNeeded()
-            try {
-                dispatchAnimationLoop()
-            } finally {
-                AudioReactiveEngine.stop()
+        scope.launch {
+            animationMutex.withLock {
+                job?.cancelAndJoin()
+                job = null
+                val currentJob = launch {
+                    startAudioEngineIfNeeded()
+                    try {
+                        dispatchAnimationLoop()
+                    } finally {
+                        AudioReactiveEngine.stop()
+                    }
+                }
+                job = currentJob
             }
         }
+        updateNotificationText()
     }
 
     private suspend fun CoroutineScope.dispatchAnimationLoop() {
+
+        LightsBridge.stopSpin()
         val mode = _stateFlow.value.mode
         if (mode != MODE_DUAL) {
 
@@ -657,18 +717,27 @@ class DashDazzService : Service() {
 
     private fun launchAnimationLoopBypassScreenCheck() {
         _stateFlow.update { it.copy(isScreenPaused = false) }
-        job?.cancel()
-        job = scope.launch {
-            startAudioEngineIfNeeded()
-            try {
-                dispatchAnimationLoop()
-            } finally {
-                AudioReactiveEngine.stop()
+        scope.launch {
+            animationMutex.withLock {
+                job?.cancelAndJoin()
+                job = null
+                val currentJob = launch {
+                    startAudioEngineIfNeeded()
+                    try {
+                        dispatchAnimationLoop()
+                    } finally {
+                        AudioReactiveEngine.stop()
+                    }
+                }
+                job = currentJob
             }
         }
+        updateNotificationText()
     }
 
     private fun reactive(): Boolean = _stateFlow.value.audioReactive
+
+    private fun govDelay(baseMs: Long): Long = maxOf(baseMs, _stateFlow.value.frameMinMs)
 
     private suspend fun CoroutineScope.runRainbowLoop() {
         var hue = 0f
@@ -686,6 +755,14 @@ class DashDazzService : Service() {
             if (reactive()) {
                 val now = System.currentTimeMillis()
                 val frame = AudioReactiveEngine.sample(now)
+                if (frame.silent) {
+
+                    val dynBright = (brightness * 0.9f).coerceIn(0.05f, 1f)
+                    LightsBridge.setCameraRing(Color.HSVToColor(floatArrayOf(hue, 1f, dynBright)))
+                    hue = (hue + hueIncrement) % 360f
+                    delay(govDelay(stepMs))
+                    continue
+                }
                 val beats = (frame.beatCount - lastBeatCount).toInt()
                 if (beats > 0) {
                     lastBeatCount = frame.beatCount
@@ -693,7 +770,7 @@ class DashDazzService : Service() {
                 }
                 val bright = (0.08f + frame.beat * 0.92f) * brightness
                 LightsBridge.setCameraRing(hsv(audioHue, 1f, bright))
-                delay(20L)
+                delay(govDelay(20L))
                 continue
             }
 
@@ -796,7 +873,7 @@ class DashDazzService : Service() {
                 }
             }
 
-            delay(stepMs)
+            delay(govDelay(stepMs))
         }
     }
 
@@ -810,8 +887,30 @@ class DashDazzService : Service() {
             Color.colorToHSV(baseColor, hsv)
             val userBright = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
 
+            if (!reactive() && LightsBridge.isRootAvailable()) {
+
+                val packed = Color.HSVToColor(floatArrayOf(hsv[0], hsv[1], userBright))
+                LightsBridge.setHardwareBreath(
+                    Color.red(packed), Color.green(packed), Color.blue(packed)
+                )
+                _stateFlow.first { s ->
+                    s.color != baseColor || s.brightness != userBright ||
+                            s.mode != MODE_BREATHE || s.audioReactive
+                }
+                continue
+            }
+
             if (reactive()) {
                 val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
+                if (frame.silent) {
+
+                    val factor = ((sin(angle) + 1.0) / 2.0).toFloat()
+                    val fallback = floatArrayOf(hsv[0], hsv[1], (0.05f + factor * (userBright - 0.05f)))
+                    LightsBridge.setCameraRing(Color.HSVToColor(fallback))
+                    angle += 0.06
+                    delay(govDelay(stepMs))
+                    continue
+                }
                 val ceiling = (userBright * (0.35f + 0.65f * frame.level)).coerceIn(0.1f, 1f)
                 val centre = 0.05f + (ceiling - 0.05f) * 0.5f
                 val depth = ((ceiling - 0.05f) * 0.4f * frame.beat).coerceAtMost(ceiling - centre)
@@ -821,7 +920,7 @@ class DashDazzService : Service() {
                 val breathHsv = floatArrayOf(hsv[0], hsv[1], (minVal + factor * (maxVal - minVal)))
                 LightsBridge.setCameraRing(Color.HSVToColor(breathHsv))
                 angle += 0.06
-                delay(20L)
+                delay(govDelay(20L))
                 continue
             }
 
@@ -829,7 +928,7 @@ class DashDazzService : Service() {
             val breathHsv = floatArrayOf(hsv[0], hsv[1], (0.05f + factor * (userBright - 0.05f)))
             LightsBridge.setCameraRing(Color.HSVToColor(breathHsv))
             angle += 0.06
-            delay(stepMs)
+            delay(govDelay(stepMs))
         }
     }
 
@@ -838,22 +937,34 @@ class DashDazzService : Service() {
         if (reactive()) {
             val baseHsv = FloatArray(3)
             while (isActive) {
+                ensureActive()
                 val state = _stateFlow.value
                 val userBright = state.brightness.coerceIn(0.05f, 1f)
                 Color.colorToHSV(state.color, baseHsv)
                 val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
+                if (frame.silent) {
+
+                    val targetColor = hsv(baseHsv[0], baseHsv[1], userBright)
+                    if (targetColor != lastColor) {
+                        lastColor = targetColor
+                        LightsBridge.setCameraRing(targetColor)
+                    }
+                    delay(100L)
+                    continue
+                }
                 val bright = (0.15f + frame.level * 0.70f + frame.beat * 0.30f) * userBright
                 val targetColor = hsv(baseHsv[0], baseHsv[1], bright)
                 if (targetColor != lastColor) {
                     lastColor = targetColor
                     LightsBridge.setCameraRing(targetColor)
                 }
-                delay(20L)
+                delay(govDelay(20L))
             }
             return
         }
 
         _stateFlow.collect { state ->
+            ensureActive()
             val hsv = FloatArray(3)
             Color.colorToHSV(state.color, hsv)
             hsv[2] = state.brightness.coerceIn(0.05f, 1f)
@@ -876,6 +987,11 @@ class DashDazzService : Service() {
     private fun hsvFromArgb(argb: Int, brightness: Float): Int {
         AndroidColor.colorToHSV(argb, hsvScratch)
         return hsv(hsvScratch[0], hsvScratch[1], brightness)
+    }
+
+    private fun withDim(argb: Int, brightness: Float): Int {
+        AndroidColor.colorToHSV(argb, hsvScratch)
+        return hsv(hsvScratch[0], hsvScratch[1], (brightness * 0.35f).coerceIn(0.05f, 1f))
     }
 
     private fun colorToHsv(argb: Int): FloatArray {
@@ -907,11 +1023,20 @@ class DashDazzService : Service() {
             when (dualStyle) {
                 DUAL_HARDWARE_SPLIT -> {
                     if (LightsBridge.isRootAvailable()) {
-                        val state = _stateFlow.value
-                        val needFull = !splitInited
-                        LightsBridge.setDualSpotColors(state.splitColorA, state.splitColorB, full = needFull)
-                        splitInited = true
-                        delay(if (needFull) 400L else 1000L)
+                        if (!splitInited) {
+                            val state = _stateFlow.value
+                            LightsBridge.setDualSpotColors(state.splitColorA, state.splitColorB, full = true)
+                            splitInited = true
+                            delay(400L)
+                        } else {
+
+                            val snapA = _stateFlow.value.splitColorA
+                            val snapB = _stateFlow.value.splitColorB
+                            _stateFlow.first { s ->
+                                s.splitColorA != snapA || s.splitColorB != snapB ||
+                                        s.dualStyle != DUAL_HARDWARE_SPLIT || s.mode != MODE_DUAL
+                            }
+                        }
                     } else {
                         LightsBridge.setDualColorGame()
                         delay(3500L)
@@ -928,13 +1053,13 @@ class DashDazzService : Service() {
                         LightsBridge.setSpinFrame(isSpotA, activeColor, brightness)
                         stepIndex++
                         val spinDelay = speedMs.coerceIn(50L, 500L)
-                        delay(spinDelay)
+                        delay(govDelay(spinDelay))
                     } else {
                         val isSpotA = (stepIndex % 2 == 0)
                         val activeColor = if (isSpotA) _stateFlow.value.spinColorA else _stateFlow.value.spinColorB
                         LightsBridge.setCameraRing(activeColor)
                         stepIndex++
-                        delay(speedMs.coerceIn(80L, 500L))
+                        delay(govDelay(speedMs.coerceIn(80L, 500L)))
                     }
                 }
                 DUAL_POLICE -> {
@@ -947,7 +1072,7 @@ class DashDazzService : Service() {
                         5 -> LightsBridge.setCameraRing(0)
                     }
                     subStep++
-                    delay(speedMs * 3L)
+                    delay(govDelay(speedMs * 3L))
                 }
                 DUAL_ALTERNATE -> {
 
@@ -957,7 +1082,7 @@ class DashDazzService : Service() {
                     val activeColor = if (stepIndex % 2 == 0) color0 else color1
                     LightsBridge.setCameraRing(activeColor)
                     stepIndex++
-                    delay(speedMs * 8L)
+                    delay(govDelay(speedMs * 8L))
                 }
                 DUAL_RAINBOW_DUO -> {
 
@@ -971,7 +1096,7 @@ class DashDazzService : Service() {
                         LightsBridge.setDualSpotColors(colorA, colorB, full = needFull)
                         splitInited = true
                         duoHue = (duoHue + 3f) % 360f
-                        delay(speedMs.coerceIn(30L, 250L))
+                        delay(govDelay(speedMs.coerceIn(30L, 250L)))
                     } else {
                         LightsBridge.setDualColorGame()
                         delay(3500L)
@@ -980,40 +1105,71 @@ class DashDazzService : Service() {
                 DUAL_BEAT_RAINBOW -> {
 
                     val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
-                    val beats = (frame.beatCount - lastBeatCount).toInt()
-                    if (beats > 0) {
-                        lastBeatCount = frame.beatCount
-                        beatHue = (beatHue + AudioReactiveEngine.degreesPerBeat * beats.coerceAtMost(3)) % 360f
-                    }
-                    val bright = (0.08f + frame.beat * 0.92f) * brightness
-                    val colorA = hsv(beatHue, 1f, bright)
-                    val colorB = hsv(beatHue + _stateFlow.value.duoHueOffset, 1f, bright)
-                    if (LightsBridge.isRootAvailable()) {
-                        val needFull = !splitInited
-                        LightsBridge.setDualSpotColors(colorA, colorB, full = needFull)
-                        splitInited = true
+                    if (frame.silent) {
+
+                        beatHue = (beatHue + 1.5f) % 360f
+                        val bright = (brightness * 0.9f).coerceIn(0.05f, 1f)
+                        val colorA = hsv(beatHue, 1f, bright)
+                        if (LightsBridge.isRootAvailable()) {
+                            val needFull = !splitInited
+                            val colorB = hsv(beatHue + _stateFlow.value.duoHueOffset, 1f, bright)
+                            LightsBridge.setDualSpotColors(colorA, colorB, full = needFull)
+                            splitInited = true
+                        } else {
+                            LightsBridge.setCameraRing(colorA)
+                        }
+                        delay(govDelay(speedMs.coerceIn(30L, 250L)))
                     } else {
-                        LightsBridge.setCameraRing(colorA)
+                        val beats = (frame.beatCount - lastBeatCount).toInt()
+                        if (beats > 0) {
+                            lastBeatCount = frame.beatCount
+                            beatHue = (beatHue + AudioReactiveEngine.degreesPerBeat * beats.coerceAtMost(3)) % 360f
+                        }
+                        val bright = (0.08f + frame.beat * 0.92f) * brightness
+                        val colorA = hsv(beatHue, 1f, bright)
+                        val colorB = hsv(beatHue + _stateFlow.value.duoHueOffset, 1f, bright)
+                        if (LightsBridge.isRootAvailable()) {
+                            val needFull = !splitInited
+                            LightsBridge.setDualSpotColors(colorA, colorB, full = needFull)
+                            splitInited = true
+                        } else {
+                            LightsBridge.setCameraRing(colorA)
+                        }
+                        delay(govDelay(20L))
                     }
-                    delay(20L)
                 }
                 DUAL_SPLIT_BEAT -> {
 
                     val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
-                    val even = frame.beatCount % 2 == 0L
-                    val state = _stateFlow.value
-                    val brightA = (0.10f + (if (even) frame.beat else frame.level) * 0.9f) * brightness
-                    val brightB = (0.10f + (if (even) frame.level else frame.beat) * 0.9f) * brightness
-                    val colorA = hsv(colorToHsv(state.splitColorA)[0], 1f, brightA)
-                    val colorB = hsv(colorToHsv(state.splitColorB)[0], 1f, brightB)
-                    if (LightsBridge.isRootAvailable()) {
-                        val needFull = !splitInited
-                        LightsBridge.setDualSpotColors(colorA, colorB, full = needFull)
-                        splitInited = true
+                    if (frame.silent) {
+
+                        val state = _stateFlow.value
+                        val dimA = withDim(state.splitColorA, brightness)
+                        val dimB = withDim(state.splitColorB, brightness)
+                        if (LightsBridge.isRootAvailable()) {
+                            val needFull = !splitInited
+                            LightsBridge.setDualSpotColors(dimA, dimB, full = needFull)
+                            splitInited = true
+                        } else {
+                            LightsBridge.setCameraRing(dimA)
+                        }
+                        delay(100L)
                     } else {
-                        LightsBridge.setCameraRing(colorA)
+                        val even = frame.beatCount % 2 == 0L
+                        val state = _stateFlow.value
+                        val brightA = (0.10f + (if (even) frame.beat else frame.level) * 0.9f) * brightness
+                        val brightB = (0.10f + (if (even) frame.level else frame.beat) * 0.9f) * brightness
+                        val colorA = hsv(colorToHsv(state.splitColorA)[0], 1f, brightA)
+                        val colorB = hsv(colorToHsv(state.splitColorB)[0], 1f, brightB)
+                        if (LightsBridge.isRootAvailable()) {
+                            val needFull = !splitInited
+                            LightsBridge.setDualSpotColors(colorA, colorB, full = needFull)
+                            splitInited = true
+                        } else {
+                            LightsBridge.setCameraRing(colorA)
+                        }
+                        delay(govDelay(20L))
                     }
-                    delay(20L)
                 }
                 else -> {
                     LightsBridge.setDualColorGame()
@@ -1024,18 +1180,25 @@ class DashDazzService : Service() {
     }
 
     private fun handleNotificationPulse(pulseColor: Int) {
-        pulseJob?.cancel()
+        val gen = ++pulseGen
+
+        activateGen++
+        activateJob?.cancel()
         val wasRunningBeforePulse = _stateFlow.value.isRunning && !_stateFlow.value.isScreenPaused
+        val wasPausedByPolicy = _stateFlow.value.isRunning && _stateFlow.value.isScreenPaused
         val isNotifOnlyMode = _stateFlow.value.screenMode == SCREEN_NOTIF_ONLY
 
         if (!_stateFlow.value.isRunning) {
             startAsForeground()
         }
 
+        pulseJob?.cancel()
         pulseJob = scope.launch {
             try {
-                if (wasRunningBeforePulse) {
-                    job?.cancel()
+                animationMutex.withLock {
+                    if (gen != pulseGen) return@withLock
+                    job?.cancelAndJoin()
+                    job = null
                 }
 
                 val hsv = FloatArray(3)
@@ -1043,8 +1206,11 @@ class DashDazzService : Service() {
                 val maxBright = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
 
                 for (cycle in 0 until 2) {
+                    ensureActive()
+                    if (gen != pulseGen) return@launch
                     val steps = 25
                     for (i in 0..steps) {
+                        ensureActive()
                         val progress = sin(Math.PI * i / steps).toFloat()
                         val pulseHsv = floatArrayOf(hsv[0], hsv[1], progress * maxBright)
                         LightsBridge.setCameraRing(Color.HSVToColor(pulseHsv))
@@ -1053,18 +1219,26 @@ class DashDazzService : Service() {
                     delay(60)
                 }
             } finally {
+                if (gen != pulseGen) return@launch
                 withContext(NonCancellable) {
-                    LightsBridge.resetScene()
-                    if (wasRunningBeforePulse) {
-                        launchAnimationLoop()
-                    } else if (isNotifOnlyMode) {
+                    animationMutex.withLock {
+                        if (gen != pulseGen) return@withLock
+                        LightsBridge.resetScene()
+                        when {
+                            wasRunningBeforePulse -> launchAnimationLoop()
+                            wasPausedByPolicy || isNotifOnlyMode -> {
 
-                        LightsBridge.turnOff()
-                        _stateFlow.update { it.copy(isScreenPaused = true) }
-                    } else {
-                        LightsBridge.turnOff()
+                                LightsBridge.turnOff()
+                                _stateFlow.update { it.copy(isRunning = true, isScreenPaused = true) }
+                                updateNotificationText()
+                                notifyTileState(this@DashDazzService)
+                            }
+                            else -> {
+                                LightsBridge.turnOff()
 
-                        stopLight()
+                                stopLight()
+                            }
+                        }
                     }
                 }
             }
@@ -1072,7 +1246,28 @@ class DashDazzService : Service() {
     }
 
     private fun handleActivateForNotification(durationSec: Int) {
-        activateJob?.cancel()
+        val safeDuration = durationSec.coerceIn(1, 60)
+        val gen = ++activateGen
+
+        pulseGen++
+        pulseJob?.cancel()
+
+        if (stillRunning()) {
+            activateJob?.cancel()
+            activateJob = scope.launch {
+                try {
+                    delay(safeDuration * 1000L)
+                } finally {
+                    if (gen != activateGen) return@launch
+                    withContext(NonCancellable) {
+                        Log.d(TAG, "Notification activate duration expired")
+                        updateNotificationText()
+                    }
+                }
+            }
+            updateNotificationText()
+            return
+        }
 
         val savedMode = Prefs.getMode(this)
         val savedColor = Prefs.getColor(this)
@@ -1088,6 +1283,7 @@ class DashDazzService : Service() {
         val savedDuoHueOffset = Prefs.getDuoHueOffset(this)
         val savedNotifMode = Prefs.getNotificationMode(this)
         val savedNotifActivateDuration = Prefs.getNotificationActivateDuration(this)
+        val savedAudioReactive = Prefs.isAudioReactive(this)
 
         _stateFlow.update {
             it.copy(
@@ -1098,6 +1294,7 @@ class DashDazzService : Service() {
                 speedMs = savedSpeed,
                 brightness = savedBrightness,
                 screenMode = savedScreenMode,
+                blinkOnNotification = it.blinkOnNotification,
                 palette = savedPalette,
                 dualStyle = savedDualStyle,
                 splitColorA = savedSplitColorA,
@@ -1106,7 +1303,8 @@ class DashDazzService : Service() {
                 spinColorB = savedSpinColorB,
                 duoHueOffset = savedDuoHueOffset,
                 notifMode = savedNotifMode,
-                notifActivateDuration = savedNotifActivateDuration
+                notifActivateDuration = savedNotifActivateDuration,
+                audioReactive = savedAudioReactive
             )
         }
 
@@ -1120,20 +1318,29 @@ class DashDazzService : Service() {
             launchAnimationLoopBypassScreenCheck()
         }
         notifyTileState(this)
+        updateNotificationText()
 
+        activateJob?.cancel()
         activateJob = scope.launch {
             try {
-                delay(durationSec * 1000L)
+                delay(safeDuration * 1000L)
             } finally {
+                if (gen != activateGen) return@launch
                 withContext(NonCancellable) {
-                    Log.d(TAG, "Notification activate duration expired, stopping")
-                    if (isNotifOnlyMode) {
+                    animationMutex.withLock {
+                        if (gen != activateGen) return@withLock
+                        Log.d(TAG, "Notification activate duration expired, stopping")
+                        if (isNotifOnlyMode) {
 
-                        job?.cancel()
-                        LightsBridge.turnOff()
-                        _stateFlow.update { it.copy(isScreenPaused = true) }
-                    } else {
-                        stopLight()
+                            job?.cancelAndJoin()
+                            job = null
+                            LightsBridge.turnOff()
+                            _stateFlow.update { it.copy(isScreenPaused = true) }
+                            updateNotificationText()
+                            notifyTileState(this@DashDazzService)
+                        } else {
+                            stopLight()
+                        }
                     }
                 }
             }
@@ -1144,16 +1351,26 @@ class DashDazzService : Service() {
         _stateFlow.value.isRunning && !_stateFlow.value.isScreenPaused
 
     private fun stopLight() {
-        job?.cancel()
+        pulseGen++
+        activateGen++
         pulseJob?.cancel()
         activateJob?.cancel()
-        AudioReactiveEngine.stop()
+        LightsBridge.stopSpin()
         scope.launch {
+            animationMutex.withLock {
+                job?.cancelAndJoin()
+                job = null
+                AudioReactiveEngine.stop()
+            }
+        }
+
+        ioScope.launch {
             withContext(NonCancellable) {
                 LightsBridge.turnOff()
             }
         }
         _stateFlow.update { it.copy(isRunning = false, isScreenPaused = false) }
+        updateNotificationText()
         notifyTileState(this)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -1163,6 +1380,8 @@ class DashDazzService : Service() {
         if (activeService == this) {
             activeService = null
         }
+        pulseGen++
+        activateGen++
         if (screenReceiverRegistered) {
             try {
                 unregisterReceiver(screenReceiver)
@@ -1171,7 +1390,22 @@ class DashDazzService : Service() {
             }
             screenReceiverRegistered = false
         }
-        stopLight()
+
+        pulseJob?.cancel()
+        activateJob?.cancel()
+        LightsBridge.stopSpin()
+        scope.launch {
+            animationMutex.withLock {
+                job?.cancelAndJoin()
+                job = null
+            }
+        }
+        ioScope.launch {
+            withContext(NonCancellable) {
+                runCatching { LightsBridge.turnOff() }
+            }
+        }
+        _stateFlow.update { it.copy(isRunning = false, isScreenPaused = false) }
         scope.cancel()
         super.onDestroy()
     }
