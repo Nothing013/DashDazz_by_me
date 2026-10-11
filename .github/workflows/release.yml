@@ -36,7 +36,7 @@ jobs:
 
       - name: Resolve and verify version
         run: |
-          VER=$(./gradlew :app:printVersion --console=plain -q | grep "Version name" | sed 's/.*: \([0-9.]*\).*/\1/')
+          VER=$(./gradlew :app:printVersion --console=plain | grep "Version name" | sed 's/.*: \([0-9.]*\).*/\1/')
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             WANT="${{ inputs.version }}"
             echo "Requested: $WANT, app version: $VER"
