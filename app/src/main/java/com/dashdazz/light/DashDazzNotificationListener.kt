@@ -117,7 +117,7 @@ class DashDazzNotificationListener : NotificationListenerService() {
         if ((notification.flags and Notification.FLAG_NO_CLEAR) != 0) return
 
         val allowedApps = Prefs.getNotifApps(this)
-        if (allowedApps.isNotEmpty() && sbn.packageName !in allowedApps) return
+        if (Prefs.isNotifAppsFilter(this) && sbn.packageName !in allowedApps) return
 
         val notifMode = Prefs.getNotificationMode(this)
         when (notifMode) {

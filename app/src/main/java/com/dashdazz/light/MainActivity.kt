@@ -555,6 +555,7 @@ fun DashDazzScreen(
     var showAudioTuningDialog by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
+    var appsFilterOn by remember { mutableStateOf(Prefs.isNotifAppsFilter(context)) }
 
     var snack by remember { mutableStateOf<Triple<String, String?, (() -> Unit)?>?>(null) }
     LaunchedEffect(snack) {
@@ -2081,6 +2082,7 @@ fun DashDazzScreen(
                                 color = Color.Gray,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
+                            Spacer(modifier = Modifier.height(16.dp))
                             if (serviceState.screenMode == DashDazzService.SCREEN_NOTIF_ONLY){
 
                                 Text(
@@ -2155,13 +2157,14 @@ fun DashDazzScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 SuperArrow(
                                     title = stringResource(R.string.notif_apps_title),
-                                    summary = if (allowedApps.isEmpty()) {
+                                    summary = if (!appsFilterOn) {
                                         stringResource(R.string.notif_apps_all)
                                     } else {
                                         stringResource(R.string.notif_apps_count, allowedApps.size)
                                     },
                                     onClick = {
                                         allowedApps = Prefs.getNotifApps(context)
+                                        appsFilterOn = Prefs.isNotifAppsFilter(context)
                                         showAppPicker = true
                                     }
                                 )
@@ -2300,6 +2303,11 @@ fun DashDazzScreen(
             if (showAppPicker) {
                 NotifAppPickerDialog(
                     allowed = allowedApps,
+                    filterOn = appsFilterOn,
+                    onFilterChange = {
+                        appsFilterOn = it
+                        Prefs.setNotifAppsFilter(context, it)
+                    },
                     onChange = {
                         allowedApps = it
                         Prefs.setNotifApps(context, it)
@@ -2314,6 +2322,8 @@ fun DashDazzScreen(
 @Composable
 fun NotifAppPickerDialog(
     allowed: Set<String>,
+    filterOn: Boolean,
+    onFilterChange: (Boolean) -> Unit,
     onChange: (Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -2336,7 +2346,7 @@ fun NotifAppPickerDialog(
                 .getOrDefault(info.packageName)
         }
     }
-    val effective = if (allowed.isEmpty()) apps.map { it.packageName }.toSet() else allowed
+    val effective = if (!filterOn) apps.map { it.packageName }.toSet() else allowed
     var expandedPkg by remember { mutableStateOf<String?>(null) }
     var cfgTick by remember { mutableIntStateOf(0) }
     val quickColors = listOf(
@@ -2364,12 +2374,14 @@ fun NotifAppPickerDialog(
                 SuperSwitch(
                     title = stringResource(R.string.notif_apps_all),
                     summary = stringResource(R.string.notif_apps_all_desc),
-                    checked = allowed.isEmpty(),
+                    checked = !filterOn,
                     onCheckedChange = { on ->
                         if (on) {
+                            onFilterChange(false)
                             onChange(emptySet())
                         } else {
-                            onChange(apps.map { it.packageName }.toSet())
+                            onFilterChange(true)
+                            onChange(emptySet())
                         }
                     }
                 )
@@ -2388,7 +2400,14 @@ fun NotifAppPickerDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { onChange(if (on) effective - pkg else effective + pkg) }
+                                .clickable {
+                                    if (!filterOn) {
+                                        onFilterChange(true)
+                                        onChange(apps.map { it.packageName }.toSet() - pkg)
+                                    } else {
+                                        onChange(if (on) effective - pkg else effective + pkg)
+                                    }
+                                }
                                 .padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
                             val icon = remember(pkg) {

@@ -246,6 +246,7 @@ object Prefs {
     private const val KEY_CONFLICT_DISMISSED = "key_conflict_dismissed"
     private const val KEY_FRAME_MIN_MS = "key_frame_min_ms"
     private const val KEY_NOTIF_APPS = "key_notif_apps"
+    private const val KEY_NOTIF_APPS_FILTER = "key_notif_apps_filter"
     private const val KEY_NOTIF_APP_CFG = "key_notif_app_cfg"
 
     data class AppNotifConfig(val color: Int?, val durationSec: Int?)
@@ -269,6 +270,22 @@ object Prefs {
 
     fun setNotifApps(context: Context, pkgs: Set<String>) {
         prefs(context).edit().putStringSet(KEY_NOTIF_APPS, pkgs.toSet()).apply()
+    }
+
+    fun isNotifAppsFilter(context: Context): Boolean {
+        val p = prefs(context)
+        if (!p.contains(KEY_NOTIF_APPS_FILTER)) {
+            if (!p.getStringSet(KEY_NOTIF_APPS, emptySet()).isNullOrEmpty()) {
+                p.edit().putBoolean(KEY_NOTIF_APPS_FILTER, true).apply()
+                return true
+            }
+            return false
+        }
+        return p.getBoolean(KEY_NOTIF_APPS_FILTER, false)
+    }
+
+    fun setNotifAppsFilter(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_NOTIF_APPS_FILTER, enabled).apply()
     }
 
     fun getAppNotifConfig(context: Context, pkg: String): AppNotifConfig {
