@@ -16,6 +16,10 @@ Based on https://github.com/fan-world-me/HyperOS-ColorLightManager-Research
 - **Effect frame rate** - Smooth / Balanced / Eco governor caps animation speed to save battery; breathing runs in LED silicon on rooted devices
 - **System integration** - Quick Settings tile, notification listener sync, HyperOS "Rhythmic light" conflict detection, dark / light / system theme
 
+## Screenshots
+
+<img src="Screenshot/Main.jpg" width="260" alt="Lighting tab"> <img src="Screenshot/Audio.jpg" width="260" alt="Audio tuning"> <img src="Screenshot/Setting.jpg" width="260" alt="Settings tab">
+
 ## Requirements
 
 - Xiaomi HyperOS device with camera-ring LED (AW21024). Confirmed working: POCO X8 Pro Max, POCO X8 Pro, Redmi Turbo 5, Redmi Turbo 5 Max, Redmi Turbo 4 Pro

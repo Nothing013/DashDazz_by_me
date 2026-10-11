@@ -260,10 +260,6 @@ object Prefs {
     fun getFrameMinMs(context: Context): Long =
         prefs(context).getLong(KEY_FRAME_MIN_MS, FRAME_SMOOTH_MS).coerceIn(15L, 100L)
 
-    fun setFrameMinMs(context: Context, ms: Long) {
-        prefs(context).edit().putLong(KEY_FRAME_MIN_MS, ms.coerceIn(15L, 100L)).apply()
-    }
-
     fun getCustomPresets(context: Context): List<Pair<Float, Float>> {
         val raw = prefs(context).getString(KEY_CUSTOM_PRESETS, null) ?: return emptyList()
         return raw.split(";").filter { it.contains(",") }.mapNotNull {

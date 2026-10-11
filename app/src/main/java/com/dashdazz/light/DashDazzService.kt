@@ -80,7 +80,6 @@ class DashDazzService : Service() {
         const val EXTRA_NOTIF_MODE = "extra_notif_mode"
         const val EXTRA_NOTIF_ACTIVATE_DURATION = "extra_notif_activate_duration"
         const val EXTRA_ACTIVATE_DURATION = "extra_activate_duration"
-        const val EXTRA_FRAME_MIN_MS = "extra_frame_min_ms"
 
         const val MODE_RAINBOW = 0
         const val MODE_BREATHE = 1
@@ -172,7 +171,6 @@ class DashDazzService : Service() {
                 putExtra(EXTRA_DUO_HUE_OFFSET, duoHueOffset ?: s.duoHueOffset)
                 putExtra(EXTRA_NOTIF_MODE, notifMode ?: s.notifMode)
                 putExtra(EXTRA_NOTIF_ACTIVATE_DURATION, notifActivateDuration ?: s.notifActivateDuration)
-                putExtra(EXTRA_FRAME_MIN_MS, s.frameMinMs)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
