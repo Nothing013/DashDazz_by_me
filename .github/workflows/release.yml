@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Verify tag matches app version
+        run: |
+          VER=$(./gradlew :app:printVersion --console=plain -q | grep "Version name" | sed 's/.*: \([0-9.]*\).*/\1/')
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "Tag version: $TAG, app version: $VER"
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::Tag v$TAG does not match app version $VER. Move the tag or cut a new one."
+            exit 1
+          fi
+
+      - name: Restore release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.DASHDAZZ_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.DASHDAZZ_STORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.DASHDAZZ_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DASHDAZZ_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$STORE_PASS" ] || [ -z "$KEY_PASS" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "::error::Release signing secrets (DASHDAZZ_KEYSTORE_BASE64 / DASHDAZZ_STORE_PASSWORD / DASHDAZZ_KEY_PASSWORD / DASHDAZZ_KEY_ALIAS) are missing."
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > app/dashdazz.keystore.jks
+
+      - name: Build signed release APK
+        env:
+          STORE_PASS: ${{ secrets.DASHDAZZ_STORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.DASHDAZZ_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DASHDAZZ_KEY_ALIAS }}
+        run: ./gradlew :app:assembleRelease --stacktrace "-Pdashdazz.storePassword=$STORE_PASS" "-Pdashdazz.keyPassword=$KEY_PASS" "-Pdashdazz.keyAlias=$KEY_ALIAS"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" app/build/outputs/apk/release/*.apk --generate-notes

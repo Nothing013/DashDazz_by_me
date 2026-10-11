@@ -18,16 +18,29 @@ fun signingSecret(name: String): String? =
         ?: System.getenv(name.uppercase().replace('.', '_'))
 
 val dashdazzStorePassword = signingSecret("dashdazz.storePassword")
-    ?: error(
-        "Missing signing password. Add dashdazz.storePassword to local.properties " +
-            "(gitignored) or pass -Pdashdazz.storePassword=... "
-    )
 val dashdazzKeyPassword = signingSecret("dashdazz.keyPassword")
-    ?: error(
-        "Missing key password. Add dashdazz.keyPassword to local.properties " +
-            "(gitignored) or pass -Pdashdazz.keyPassword=..."
-    )
 val dashdazzKeyAlias = signingSecret("dashdazz.keyAlias") ?: "dashdazz"
+
+val buildingRelease = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true)
+}
+if (buildingRelease) {
+    if (dashdazzStorePassword == null) {
+        error(
+            "Missing signing password. Add dashdazz.storePassword to local.properties " +
+                "or pass -Pdashdazz.storePassword=..."
+        )
+    }
+    if (dashdazzKeyPassword == null) {
+        error(
+            "Missing key password. Add dashdazz.keyPassword to local.properties " +
+                "or pass -Pdashdazz.keyPassword=..."
+        )
+    }
+    if (!file("dashdazz.keystore.jks").exists()) {
+        error("Missing keystore file app/dashdazz.keystore.jks")
+    }
+}
 
 fun gitCommitCount(): Int? = try {
     val stdout = ByteArrayOutputStream()
@@ -99,7 +112,6 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            signingConfig = signingConfigs.getByName("release")
         }
         release {
             isMinifyEnabled = true
