@@ -107,34 +107,16 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
         if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
         if ((notification.flags and Notification.FLAG_NO_CLEAR) != 0) return
-        if (!sbn.isClearable) return
-
-        val allowedApps = Prefs.getNotifApps(this)
-        if (allowedApps.isNotEmpty() && sbn.packageName !in allowedApps) return
-
-        val extras = notification.extras
-        if (extras != null) {
-            if (extras.containsKey(Notification.EXTRA_PROGRESS) ||
-                extras.containsKey(Notification.EXTRA_PROGRESS_MAX)
-            ) {
-                return
-            }
-        }
-        if ((sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
-        when (notification.category) {
-            Notification.CATEGORY_PROGRESS,
-            Notification.CATEGORY_SERVICE,
-            Notification.CATEGORY_SYSTEM,
-            Notification.CATEGORY_TRANSPORT -> return
-        }
 
         val notifMode = Prefs.getNotificationMode(this)
         when (notifMode) {
             Prefs.NOTIF_MODE_BLINK -> {
 
-                val raw = if (notification.color != 0) notification.color else Prefs.getColor(this)
-                val color = Palettes.sanitize(raw)
-                if (color == 0) return
+                val color = if (notification.color != 0) {
+                    notification.color
+                } else {
+                    Prefs.getColor(this)
+                }
 
                 Log.d(TAG, "Notification received from ${sbn.packageName}, pulsing ring with color: $color")
                 DashDazzService.pulseNotification(this, color)
@@ -147,13 +129,9 @@ class DashDazzNotificationListener : NotificationListenerService() {
             }
             else -> {
 
-                val now = System.currentTimeMillis()
-                if (now - lastOffResetMs < 10_000L) return
-                lastOffResetMs = now
-
                 listenerScope.launch {
                     kotlinx.coroutines.delay(3500)
-                    if (DashDazzService.isRunning) LightsBridge.resetScene()
+                    LightsBridge.resetScene()
                 }
             }
         }
@@ -162,10 +140,9 @@ class DashDazzNotificationListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
 
-        if (!DashDazzService.isRunning) return
         listenerScope.launch {
             kotlinx.coroutines.delay(500)
-            if (DashDazzService.isRunning) LightsBridge.resetScene()
+            LightsBridge.resetScene()
         }
     }
 
