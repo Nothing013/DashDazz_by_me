@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -458,6 +459,8 @@ object AudioReactiveEngine {
     private const val BEAT_TIME_MEMORY = 16
     private const val BIN_SCALE = 1f / 128f
     private const val DEFAULT_CAPTURE_SIZE = 1024
+    private const val START_RETRY_MAX = 3
+    private const val START_RETRY_BASE_MS = 500L
     private const val MIC_SAMPLE_RATE = 22050
     private const val MIC_FRAME = 256
 
@@ -514,12 +517,14 @@ object AudioReactiveEngine {
 
     private var visualizer: Visualizer? = null
     private var micJob: Job? = null
+    private var retryJob: Job? = null
     private var captureSize = DEFAULT_CAPTURE_SIZE
     @Volatile private var vizSampleRateHz = 44100
 
     @Volatile private var running = false
 
     @Volatile var captureError: String? = null; private set
+    @Volatile private var captureErrorRetryable = true
 
     private val levelBand = BandTracker(attackMs = 12f, releaseMs = 190f)
     private val bassBand = BandTracker(attackMs = 18f, releaseMs = 220f)
@@ -597,7 +602,10 @@ object AudioReactiveEngine {
 
     fun setSource(context: Context, source: Int) {
         val next = if (source == SOURCE_MIC) SOURCE_MIC else SOURCE_GLOBAL_MIX
-        if (next == audioSource) return
+        if (next == audioSource) {
+            restart()
+            return
+        }
         audioSource = next
         _sourceFlow.value = next
         Prefs.setAudioSource(context, audioSource)
@@ -690,8 +698,25 @@ object AudioReactiveEngine {
         if (!ok) {
 
             _diagnostics.value = AudioDiagnostics(engineRunning = false, captureError = captureError)
+            if (audioSource == SOURCE_GLOBAL_MIX && captureErrorRetryable) {
+                scheduleStartRetry()
+            }
         }
         return ok
+    }
+
+    private fun scheduleStartRetry(attempt: Int = 1) {
+        retryJob?.cancel()
+        if (attempt > START_RETRY_MAX) return
+        retryJob = engineScope.launch {
+            delay(START_RETRY_BASE_MS * attempt)
+            if (running) return@launch
+            if (startVisualizer()) return@launch
+            _diagnostics.value = AudioDiagnostics(engineRunning = false, captureError = captureError)
+            if (captureErrorRetryable) {
+                scheduleStartRetry(attempt + 1)
+            }
+        }
     }
 
     fun restart() {
@@ -702,6 +727,8 @@ object AudioReactiveEngine {
     fun stop() {
         micJob?.cancel()
         micJob = null
+        retryJob?.cancel()
+        retryJob = null
         try {
             visualizer?.enabled = false
             visualizer?.release()
@@ -765,15 +792,15 @@ object AudioReactiveEngine {
 
             visualizer = viz
             running = true
-            visualizer = viz
-            running = true
             captureError = null
+            captureErrorRetryable = true
             Log.d(TAG, "Visualizer active (captureSize=$safeSize, rate=${Visualizer.getMaxCaptureRate()}mHz)")
             true
         } catch (e: Throwable) {
             Log.e(TAG, "Visualizer failed: ${e.message}", e)
             running = false
             captureError = e.message
+            captureErrorRetryable = e !is SecurityException
             false
         }
     }
