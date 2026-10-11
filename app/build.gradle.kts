@@ -58,9 +58,11 @@ val versionMinor = 0
 
 val gitCommits = gitCommitCount()
 val treeDirty = gitWorkingTreeDirty()
+val versionPatchBase = 47
+val versionPatch = (gitCommits ?: 5) + versionPatchBase
 
 val versionLabel = buildString {
-    append("DashDazz-$versionMajor.$versionMinor.${gitCommits ?: 5}")
+    append("DashDazz-$versionMajor.$versionMinor.$versionPatch")
     if (treeDirty) append("-dirty")
 }
 
@@ -73,9 +75,9 @@ android {
         minSdk = 26
         targetSdk = 34
 
-        versionCode = gitCommits ?: 5
+        versionCode = versionPatch
         versionName = if (gitCommits != null) {
-            "$versionMajor.$versionMinor.$gitCommits"
+            "$versionMajor.$versionMinor.$versionPatch"
         } else {
             "2.0"
         }
@@ -197,8 +199,8 @@ tasks.register("printVersion") {
     doLast {
         val suffix = if (treeDirty) " (tree dirty — debug APK marked -dirty)" else ""
         logger.lifecycle("---------------------------------------------")
-        logger.lifecycle("  Version name        : $versionMajor.$versionMinor.${gitCommits ?: "?"}$suffix")
-        logger.lifecycle("  VersionCode (build) : ${gitCommits ?: "?"}  (git commit count)")
+        logger.lifecycle("  Version name        : $versionMajor.$versionMinor.$versionPatch$suffix")
+        logger.lifecycle("  VersionCode (build) : $versionPatch  (git commit count + $versionPatchBase)")
         logger.lifecycle("  Commits on HEAD     : ${gitCommits ?: "git unavailable"}")
         logger.lifecycle("---------------------------------------------")
         logger.lifecycle("  Every commit bumps these automatically.")
