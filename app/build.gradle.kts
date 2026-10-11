@@ -85,7 +85,7 @@ android {
 
     defaultConfig {
         applicationId = "com.dashdazz.light"
-        minSdk = 26
+        minSdk = 34
         targetSdk = 34
 
         versionCode = versionPatch

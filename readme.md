@@ -16,9 +16,9 @@ Based on https://github.com/fan-world-me/HyperOS-ColorLightManager-Research
 
 ## Requirements
 
-- Xiaomi HyperOS device with camera-ring LED (AW21024)
+- Xiaomi HyperOS device with camera-ring LED (AW21024). Confirmed working: POCO X8 Pro Max, POCO X8 Pro, Redmi Turbo 5, Redmi Turbo 5 Max, Redmi Turbo 4 Pro
 - Root (full features) and/or Shizuku (basic modes)
-- Android 8.0+ (minSdk 26), compileSdk 35
+- Android 14+ (minSdk 34), compileSdk 35
 - Microphone permission only for Audio Reactive mode — no audio is recorded or uploaded
 
 ## Build
