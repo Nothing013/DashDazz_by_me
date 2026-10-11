@@ -1,25 +1,25 @@
 # DashDazz
 
-Hardware camera-ring light controller for Xiaomi HyperOS devices (POCO X8 Pro Max / Dash). Drives the RGB LED ring around the rear camera — smooth animations, music reaction, and notification alerts.
+Hardware camera-ring light controller for Xiaomi HyperOS devices (POCO X8 Pro Max / Dash). Drives the RGB LED ring around the rear camera - smooth animations, music reaction, and notification alerts.
 
 Based on https://github.com/fan-world-me/HyperOS-ColorLightManager-Research
 
 ## Highlights
 
-- **4 lighting modes** — Rainbow cycle, Breathe pulse, Solid color, and Dual Ring with 4 dual effects (Hardware Split, Rotational Spin, Police Siren, Alternate) plus Beat Rainbow and Split Beat
-- **Audio Reactive** — the selected mode dances to your music with automatic beat detection, band tracking (kick / snare / vocal / hat), and auto sensitivity; live oscilloscope and manual tuning screen included; Global Media Mix or Microphone source
-- **6 color palettes** — Spectrum, Cyberpunk, Sunset, Ocean, Pastel, Fire — plus 8 presets and unlimited savable custom presets
-- **Fine adjustments** — speed, brightness, saturation, hue, per-ring colors, spin steps, degrees-per-beat
-- **Smart automation** — pause when screen is off, blink on notification, or fully activate lights on notification with configurable duration; per-behavior notification modes (Off / Blink / Activate)
-- **Two control paths** — Root for full features incl. Dual Ring, or Shizuku for basic modes with no root
-- **System integration** — Quick Settings tile, notification listener sync, HyperOS "Rhythmic light" conflict detection, dark / light / system theme
+- **4 lighting modes** - Rainbow cycle, Breathe pulse, Solid color, and Dual Ring with 4 dual effects (Hardware Split, Rotational Spin, Police Siren, Alternate) plus Beat Rainbow and Split Beat
+- **Audio Reactive** - the selected mode dances to your music with automatic beat detection, band tracking (kick / snare / vocal / hat), and auto sensitivity; live oscilloscope and manual tuning screen included; Global Media Mix or Microphone source
+- **6 color palettes** - Spectrum, Cyberpunk, Sunset, Ocean, Pastel, Fire - plus 8 presets and unlimited savable custom presets
+- **Fine adjustments** - speed, brightness, saturation, hue, per-ring colors, spin steps, degrees-per-beat
+- **Smart automation** - pause when screen is off, blink on notification, or fully activate lights on notification with configurable duration; per-behavior notification modes (Off / Blink / Activate)
+- **Two control paths** - Root for full features incl. Dual Ring, or Shizuku for basic modes with no root
+- **System integration** - Quick Settings tile, notification listener sync, HyperOS "Rhythmic light" conflict detection, dark / light / system theme
 
 ## Requirements
 
 - Xiaomi HyperOS device with camera-ring LED (AW21024). Confirmed working: POCO X8 Pro Max, POCO X8 Pro, Redmi Turbo 5, Redmi Turbo 5 Max, Redmi Turbo 4 Pro
 - Root (full features) and/or Shizuku (basic modes)
 - Android 14+ (minSdk 34), compileSdk 35
-- Microphone permission only for Audio Reactive mode — no audio is recorded or uploaded
+- Microphone permission only for Audio Reactive mode - no audio is recorded or uploaded
 
 ## Build
 
