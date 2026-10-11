@@ -569,6 +569,7 @@ class DashDazzService : Service() {
                 }
 
                 startAsForeground()
+                rebindNotificationListener()
 
                 if (newScreenMode == SCREEN_NOTIF_ONLY) {
 
@@ -603,6 +604,17 @@ class DashDazzService : Service() {
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun rebindNotificationListener() {
+        try {
+            if (!DashDazzNotificationListener.isNotificationAccessGranted(this)) return
+            android.service.notification.NotificationListenerService.requestRebind(
+                ComponentName(this, DashDazzNotificationListener::class.java)
+            )
+        } catch (e: Throwable) {
+            Log.d(TAG, "Listener rebind ignored: ${e.message}")
         }
     }
 

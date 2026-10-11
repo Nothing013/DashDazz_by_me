@@ -2175,6 +2175,27 @@ fun DashDazzScreen(
                                             .padding(horizontal = 16.dp)
                                     )
                                 }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SuperArrow(
+                                    title = stringResource(R.string.notif_reconnect),
+                                    summary = stringResource(R.string.notif_reconnect_desc),
+                                    onClick = {
+                                        try {
+                                            android.service.notification.NotificationListenerService.requestRebind(
+                                                android.content.ComponentName(
+                                                    context,
+                                                    DashDazzNotificationListener::class.java
+                                                )
+                                            )
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.notif_reconnect_done),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } catch (_: Exception) {
+                                        }
+                                    }
+                                )
                             }
                         }
                     }

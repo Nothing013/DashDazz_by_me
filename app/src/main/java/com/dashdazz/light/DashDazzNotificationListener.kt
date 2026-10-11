@@ -84,7 +84,6 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-
         try {
             val msm = getSystemService(MediaSessionManager::class.java)
             val component = ComponentName(this, DashDazzNotificationListener::class.java)
@@ -95,6 +94,15 @@ class DashDazzNotificationListener : NotificationListenerService() {
             Log.w(TAG, "Cannot access MediaSessionManager — notification listener permission may be insufficient", e)
         } catch (e: Throwable) {
             Log.w(TAG, "MediaSessionManager setup failed", e)
+        }
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        try {
+            requestRebind(ComponentName(this, DashDazzNotificationListener::class.java))
+        } catch (e: Throwable) {
+            Log.w(TAG, "Listener rebind failed", e)
         }
     }
 

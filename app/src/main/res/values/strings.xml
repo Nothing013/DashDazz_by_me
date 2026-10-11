@@ -8,6 +8,9 @@
     <string name="notification_notif_only">Notif Only (Lights Off)</string>
     <string name="action_turn_off">Turn Off</string>
     <string name="notification_listener_label">DashDazz Notification Sync</string>
+    <string name="notif_reconnect">Reconnect listener</string>
+    <string name="notif_reconnect_desc">Rebind if notifications stop triggering the ring</string>
+    <string name="notif_reconnect_done">Listener reconnect requested</string>
 
     <string name="shizuku_not_running">Shizuku is not running. Please start Shizuku first.</string>
     <string name="shizuku_permission_needed">Shizuku is not permitted. Click to grant permission.</string>
