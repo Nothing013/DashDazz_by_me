@@ -10,10 +10,10 @@ Based on https://github.com/fan-world-me/HyperOS-ColorLightManager-Research
 - **Audio Reactive** - the selected mode dances to your music with automatic beat detection, band tracking (kick / snare / vocal / hat), and auto sensitivity; live oscilloscope and manual tuning screen included; Global Media Mix or Microphone source
 - **6 color palettes** - Spectrum, Cyberpunk, Sunset, Ocean, Pastel, Fire - plus 8 presets and unlimited savable custom presets
 - **Fine adjustments** - speed, brightness, saturation, hue, per-ring colors, spin steps, degrees-per-beat
-- **Smart automation** - pause when screen is off, or fully activate lights on notification with configurable duration; notification behavior is Off or Activate
+- **Smart automation** - pause when screen is off, or fully activate lights on notification with configurable duration; notification behavior is Off or Activate; per-app allowlist with own color and duration; listener self-heals if the system kills it
 - **Two control paths** - Root for full features incl. Dual Ring, or Shizuku for basic modes with no root
 - **Live ring preview** - the Lighting tab shows an animated phone-camera mock driven by the exact colors last pushed to hardware
-- **Effect frame rate** - Smooth / Balanced / Eco governor caps animation speed to save battery; breathing runs in LED silicon on rooted devices
+- **Effect frame rate** - Smooth / Balanced / Eco governor caps animation speed to save battery, auto-switching to Eco in battery saver; breathing runs in LED silicon on rooted devices
 - **System integration** - Quick Settings tile, notification listener sync, HyperOS "Rhythmic light" conflict detection, dark / light / system theme
 
 ## Screenshots

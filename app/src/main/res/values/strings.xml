@@ -87,10 +87,6 @@
     <string name="frame_rate_eco">Eco</string>
     <string name="frame_rate_desc">Caps animation speed. Eco roughly halves battery use.</string>
     <string name="breathe_silicon_note">Breathing runs in LED silicon on rooted devices, so speed has no effect</string>
-    <string name="call_title">Incoming calls</string>
-    <string name="call_desc">Light the ring when the phone rings</string>
-    <string name="call_rationale">DashDazz needs phone-state permission to see incoming calls. No call data leaves the device.</string>
-    <string name="call_denied">Phone permission is required for incoming-call lighting</string>
     <string name="notif_apps_title">Apps</string>
     <string name="notif_apps_all">All apps</string>
     <string name="notif_apps_all_desc">Every app can trigger the ring</string>
@@ -101,8 +97,6 @@
     <string name="a11y_apply_preset">Apply preset</string>
     <string name="a11y_delete_preset">Delete preset</string>    <string name="notif_mode_off">Off</string>
     <string name="notif_mode_off_desc">No custom notification lighting</string>
-    <string name="notif_mode_blink">Blink</string>
-    <string name="notif_mode_blink_desc">Pulse the ring briefly when a notification arrives</string>
     <string name="notif_mode_activate">Activate Lights</string>
     <string name="notif_mode_activate_desc">Turn on the ring with saved settings for a set duration</string>
     <string name="title_notif_duration">Duration: %1$d seconds</string>

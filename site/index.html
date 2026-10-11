@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DashDazz - Camera Ring Light for HyperOS</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #101014; color: #ececf1; line-height: 1.6; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 20px 64px; }
+  header { text-align: center; margin-bottom: 40px; }
+  h1 { font-size: 3rem; margin: 0 0 8px; background: linear-gradient(90deg, #ff1744, #ff9100, #00e676, #2979ff, #d500f9); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { font-size: 1.15rem; color: #b9b9c7; margin: 0 0 24px; }
+  .btn { display: inline-block; background: #2979ff; color: #fff; font-weight: 700; font-size: 1.1rem; padding: 14px 36px; border-radius: 12px; text-decoration: none; }
+  .btn:hover { background: #1c63d8; }
+  .btn-note { margin-top: 10px; font-size: 0.9rem; color: #8e8e9e; }
+  h2 { margin-top: 48px; border-bottom: 1px solid #2a2a33; padding-bottom: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+  .card { background: #1a1a21; border: 1px solid #2a2a33; border-radius: 12px; padding: 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card p { margin: 0; color: #b9b9c7; font-size: 0.95rem; }
+  .shots { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
+  .shots img { width: 260px; border-radius: 12px; border: 1px solid #2a2a33; }
+  ol.steps li { margin-bottom: 8px; }
+  code { background: #1a1a21; padding: 2px 8px; border-radius: 6px; font-size: 0.95em; }
+  footer { margin-top: 56px; color: #8e8e9e; font-size: 0.9rem; text-align: center; }
+  footer a { color: #8e8e9e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DashDazz</h1>
+    <p class="tagline">Hardware camera-ring light controller for Xiaomi HyperOS devices. Smooth animations, music reaction, and notification alerts.</p>
+    <a class="btn" href="https://github.com/olivia-hye/DashDazz/releases/latest/download/DashDazz-release.apk">Download APK</a>
+    <p class="btn-note">Android 14+ &middot; POCO X8 Pro Max, X8 Pro, Redmi Turbo 5 / 5 Max / 4 Pro</p>
+  </header>
+
+  <h2>Highlights</h2>
+  <div class="grid">
+    <div class="card"><h3>4 lighting modes</h3><p>Rainbow, Breathe, Solid, and Dual Ring with Hardware Split, Spin, Police Siren, Alternate, Beat Rainbow and Split Beat.</p></div>
+    <div class="card"><h3>Audio Reactive</h3><p>Modes dance to your music with automatic beat detection, band tracking, and auto sensitivity. Oscilloscope and tuning included.</p></div>
+    <div class="card"><h3>Palettes and presets</h3><p>6 palettes, 8 presets, unlimited custom presets, full speed / brightness / saturation / hue control.</p></div>
+    <div class="card"><h3>Smart automation</h3><p>Pause on screen off, notification lighting with per-app color and duration, self-healing listener.</p></div>
+    <div class="card"><h3>Live preview</h3><p>Animated camera-module mock driven by the exact colors last pushed to hardware.</p></div>
+    <div class="card"><h3>Eco governor</h3><p>Smooth / Balanced / Eco frame caps, auto-Eco in battery saver. Root unlocks Dual Ring and silicon breathing.</p></div>
+  </div>
+
+  <h2>Screenshots</h2>
+  <div class="shots">
+    <img src="https://raw.githubusercontent.com/olivia-hye/DashDazz/main/Screenshot/Main.jpg" alt="Lighting tab">
+    <img src="https://raw.githubusercontent.com/olivia-hye/DashDazz/main/Screenshot/Audio.jpg" alt="Audio tuning">
+    <img src="https://raw.githubusercontent.com/olivia-hye/DashDazz/main/Screenshot/Setting.jpg" alt="Settings tab">
+  </div>
+
+  <h2>Get the app</h2>
+  <ol class="steps">
+    <li>Download the APK above (or pick a version on the <a href="https://github.com/olivia-hye/DashDazz/releases">Releases page</a>).</li>
+    <li>Install it (allow install from unknown sources when asked).</li>
+    <li>Open DashDazz and grant access: <b>Root</b> for full features, or start <b>Shizuku</b> for basic modes.</li>
+    <li>Pick a mode, tune colors, turn the ring on.</li>
+  </ol>
+
+  <h2>Build it yourself</h2>
+  <p><code>./gradlew :app:assembleDebug</code> needs no secrets. Release builds need the signing key (see readme).</p>
+
+  <footer>
+    GPL-3.0-or-later &middot; Based on <a href="https://github.com/fan-world-me/HyperOS-ColorLightManager-Research">HyperOS-ColorLightManager-Research</a> &middot; <a href="https://github.com/olivia-hye/DashDazz">Source</a>
+  </footer>
+</div>
+</body>
+</html>

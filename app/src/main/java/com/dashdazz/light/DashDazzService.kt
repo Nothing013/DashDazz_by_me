@@ -111,6 +111,10 @@ class DashDazzService : Service() {
         const val NOTIFICATION_ID = 101
         const val CHANNEL_ID = "dashdazz_channel"
 
+        private const val NOTIF_TRIGGER_MIN_GAP_MS = 2000L
+        @Volatile private var lastPulseMs = 0L
+        @Volatile private var lastActivateMs = 0L
+
         private val _stateFlow = MutableStateFlow(DashDazzState())
         val stateFlow: StateFlow<DashDazzState> = _stateFlow.asStateFlow()
 
@@ -343,6 +347,9 @@ class DashDazzService : Service() {
         }
 
         fun pulseNotification(context: Context, color: Int, holdMs: Long? = null) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastPulseMs < NOTIF_TRIGGER_MIN_GAP_MS) return
+            lastPulseMs = now
             val intent = Intent(context, DashDazzService::class.java).apply {
                 action = ACTION_PULSE
                 putExtra(EXTRA_COLOR, color)
@@ -357,6 +364,9 @@ class DashDazzService : Service() {
         }
 
         fun activateForNotification(context: Context, durationSec: Int) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastActivateMs < NOTIF_TRIGGER_MIN_GAP_MS) return
+            lastActivateMs = now
             val intent = Intent(context, DashDazzService::class.java).apply {
                 action = ACTION_ACTIVATE
                 putExtra(EXTRA_ACTIVATE_DURATION, durationSec)
@@ -420,6 +430,8 @@ class DashDazzService : Service() {
     private var screenReceiverRegistered = false
     @Volatile
     private var screenInteractive = true
+    @Volatile
+    private var ecoOverride = false
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -450,6 +462,14 @@ class DashDazzService : Service() {
                         launchAnimationLoop()
                     }
                 }
+                android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                    val saver = (context?.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode) ?: false
+                    if (ecoOverride != saver) {
+                        ecoOverride = saver
+                        Log.d(TAG, "Battery saver ${if (saver) "on: Eco governor" else "off: restoring governor"}")
+                        updateNotificationText()
+                    }
+                }
             }
         }
     }
@@ -460,6 +480,7 @@ class DashDazzService : Service() {
         super.onCreate()
         activeService = this
         screenInteractive = (getSystemService(android.os.PowerManager::class.java)?.isInteractive) ?: true
+        ecoOverride = (getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode) ?: false
         createNotificationChannel()
 
         LightsBridge.logColorLightSurface()
@@ -471,6 +492,7 @@ class DashDazzService : Service() {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -750,7 +772,10 @@ class DashDazzService : Service() {
 
     private fun reactive(): Boolean = _stateFlow.value.audioReactive
 
-    private fun govDelay(baseMs: Long): Long = maxOf(baseMs, _stateFlow.value.frameMinMs)
+    private fun govDelay(baseMs: Long): Long {
+        val floor = if (ecoOverride) Prefs.FRAME_ECO_MS else _stateFlow.value.frameMinMs
+        return maxOf(baseMs, floor)
+    }
 
     private suspend fun CoroutineScope.runRainbowLoop() {
         var hue = 0f
