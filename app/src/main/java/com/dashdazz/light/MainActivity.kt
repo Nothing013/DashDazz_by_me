@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.net.Uri
@@ -2322,11 +2323,18 @@ fun NotifAppPickerDialog(
         runCatching {
             pm.getInstalledApplications(PackageManager.GET_META_DATA)
                 .filter { it.packageName != context.packageName }
+                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
                 .sortedBy {
                     runCatching { pm.getApplicationLabel(it).toString().lowercase() }
                         .getOrDefault(it.packageName)
                 }
         }.getOrDefault(emptyList())
+    }
+    val labels = remember(apps) {
+        apps.associate { info ->
+            info.packageName to runCatching { pm.getApplicationLabel(info).toString() }
+                .getOrDefault(info.packageName)
+        }
     }
     val effective = if (allowed.isEmpty()) apps.map { it.packageName }.toSet() else allowed
     var expandedPkg by remember { mutableStateOf<String?>(null) }
@@ -2357,7 +2365,13 @@ fun NotifAppPickerDialog(
                     title = stringResource(R.string.notif_apps_all),
                     summary = stringResource(R.string.notif_apps_all_desc),
                     checked = allowed.isEmpty(),
-                    onCheckedChange = { on -> if (on) onChange(emptySet()) }
+                    onCheckedChange = { on ->
+                        if (on) {
+                            onChange(emptySet())
+                        } else {
+                            onChange(apps.map { it.packageName }.toSet())
+                        }
+                    }
                 )
                 LazyColumn(
                     modifier = Modifier
@@ -2398,8 +2412,7 @@ fun NotifAppPickerDialog(
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = runCatching { pm.getApplicationLabel(info).toString() }
-                                        .getOrDefault(pkg),
+                                    text = labels[pkg] ?: pkg,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Medium,
                                     maxLines = 1
