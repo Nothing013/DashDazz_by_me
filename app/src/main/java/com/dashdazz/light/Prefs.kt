@@ -245,7 +245,6 @@ object Prefs {
     const val MAX_CUSTOM_PRESETS = 24
     private const val KEY_CONFLICT_DISMISSED = "key_conflict_dismissed"
     private const val KEY_FRAME_MIN_MS = "key_frame_min_ms"
-    private const val KEY_CALL_MODE = "key_call_mode"
 
     const val FRAME_SMOOTH_MS = 20L
     const val FRAME_BALANCED_MS = 33L
@@ -263,16 +262,6 @@ object Prefs {
 
     fun setFrameMinMs(context: Context, ms: Long) {
         prefs(context).edit().putLong(KEY_FRAME_MIN_MS, ms.coerceIn(15L, 100L)).apply()
-    }
-
-    fun getCallMode(context: Context): Int =
-        prefs(context).getInt(KEY_CALL_MODE, NOTIF_MODE_OFF)
-            .coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
-
-    fun setCallMode(context: Context, mode: Int) {
-        prefs(context).edit()
-            .putInt(KEY_CALL_MODE, mode.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE))
-            .apply()
     }
 
     fun getCustomPresets(context: Context): List<Pair<Float, Float>> {

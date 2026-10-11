@@ -522,8 +522,6 @@ fun DashDazzScreen(
 
     var pendingAudioEnable by remember { mutableStateOf(false) }
 
-    var pendingCallMode by remember { mutableIntStateOf(-1) }
-
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { granted: Boolean ->
@@ -544,22 +542,6 @@ fun DashDazzScreen(
         }
     }
 
-    val callPermissionLauncher = rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { granted: Boolean ->
-        if (!granted) {
-            pendingCallMode = -1
-            Toast.makeText(
-                context,
-                context.getString(R.string.call_denied),
-                Toast.LENGTH_LONG
-            ).show()
-        } else if (pendingCallMode >= 0) {
-            Prefs.setCallMode(context, pendingCallMode)
-            pendingCallMode = -1
-        }
-    }
-
     fun selectMode(modeId: Int) {
         DashDazzService.updateSettings(context, mode = modeId)
     }
@@ -570,7 +552,6 @@ fun DashDazzScreen(
     var duoHueOffset by remember { mutableIntStateOf(serviceState.duoHueOffset) }
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
-    var callMode by remember { mutableIntStateOf(Prefs.getCallMode(context)) }
 
     var snack by remember { mutableStateOf<Triple<String, String?, (() -> Unit)?>?>(null) }
     LaunchedEffect(snack) {
@@ -2097,78 +2078,6 @@ fun DashDazzScreen(
                                 color = Color.Gray,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = stringResource(R.string.call_title),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.call_desc),
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    Prefs.NOTIF_MODE_OFF to R.string.notif_mode_off,
-                                    Prefs.NOTIF_MODE_ACTIVATE to R.string.notif_mode_activate
-                                ).forEach { (modeVal, titleRes) ->
-                                    val isSelected = (callMode == modeVal)
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                if (isSelected) MiuixTheme.colorScheme.primary
-                                                else MiuixTheme.colorScheme.surfaceVariant
-                                            )
-                                            .semantics {
-                                                contentDescription = context.getString(
-                                                    R.string.a11y_select,
-                                                    context.getString(titleRes)
-                                                )
-                                            }
-                                            .clickable {
-                                                if (modeVal != Prefs.NOTIF_MODE_OFF &&
-                                                    ContextCompat.checkSelfPermission(
-                                                        context, Manifest.permission.READ_PHONE_STATE
-                                                    ) != PackageManager.PERMISSION_GRANTED
-                                                ) {
-                                                    pendingCallMode = modeVal
-                                                    Toast.makeText(
-                                                        context,
-                                                        context.getString(R.string.call_rationale),
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                    callPermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-                                                    return@clickable
-                                                }
-                                                callMode = modeVal
-                                                Prefs.setCallMode(context, modeVal)
-                                            }
-                                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = stringResource(titleRes),
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) Color.White else MiuixTheme.colorScheme.onSurface,
-                                            textAlign = TextAlign.Center,
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
                             if (serviceState.screenMode == DashDazzService.SCREEN_NOTIF_ONLY){
 
                                 Text(
