@@ -1,0 +1,185 @@
+<resources>
+    <string name="app_name">DashDazz</string>
+    <string name="qs_tile_label">DashDazz Ring</string>
+    <string name="notification_channel_name">DashDazz Ring Light</string>
+    <string name="notification_channel_desc">Active status of DashDazz camera ring light service</string>
+    <string name="notification_title">DashDazz Active</string>
+    <string name="notification_paused">Paused (Screen Off)</string>
+    <string name="notification_notif_only">Notif Only (Lights Off)</string>
+    <string name="action_turn_off">Turn Off</string>
+    <string name="notification_listener_label">DashDazz Notification Sync</string>
+
+    <string name="shizuku_not_running">Shizuku is not running. Please start Shizuku first.</string>
+    <string name="shizuku_permission_needed">Shizuku is not permitted. Click to grant permission.</string>
+    <string name="shizuku_connected">Shizuku connected</string>
+    <string name="btn_grant_permission">Grant Shizuku Permission</string>
+
+    <string name="btn_start">Turn ON</string>
+    <string name="btn_stop">Turn OFF</string>
+    <string name="status_service_running">Light is ACTIVE</string>
+    <string name="status_service_stopped">Light is OFF</string>
+
+    <string name="title_modes">Lighting Modes</string>
+    <string name="mode_rainbow">Rainbow</string>
+    <string name="mode_breathe">Breathe</string>
+    <string name="mode_solid">Solid</string>
+    <string name="mode_dual">Dual Ring</string>
+
+    <string name="title_dual_effects">Dual-Ring Effects</string>
+    <string name="dual_hardware_split">Hardware Split</string>
+    <string name="dual_spin">Rotational Spin</string>
+    <string name="dual_police">Police Siren</string>
+    <string name="dual_alternate">Alternate</string>
+    <string name="title_split_colors">Split Ring Colors</string>
+    <string name="title_spin_colors">Spin Colors</string>
+    <string name="spot_left">Left Ring (A)</string>
+    <string name="spot_right">Right Ring (B)</string>
+    <string name="spin_step_1">Step 1 (Spot A)</string>
+    <string name="spin_step_2">Step 2 (Spot B)</string>
+
+    <string name="title_palettes">Color Palettes</string>
+    <string name="palette_spectrum">Spectrum</string>
+    <string name="palette_cyberpunk">Cyberpunk</string>
+    <string name="palette_sunset">Sunset</string>
+    <string name="palette_ocean">Ocean</string>
+    <string name="palette_pastel">Pastel</string>
+    <string name="palette_fire">Fire</string>
+
+    <string name="title_adjustments">Adjustments</string>
+    <string name="label_speed">Speed: %1$d ms</string>
+    <string name="label_brightness">Brightness: %1$d%%</string>
+    <string name="label_saturation">Saturation: %1$d%%</string>
+    <string name="label_hue">Hue: %1$d°</string>
+
+    <string name="title_presets">Color Presets</string>
+    <string name="color_red">Red</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_green">Green</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_white">White</string>
+    <string name="title_saved_presets">Saved Presets</string>
+    <string name="btn_save_preset">+ Save Current</string>
+    <string name="preset_saved">Preset saved!</string>
+    <string name="preset_deleted">Preset deleted</string>
+    <string name="hint_long_press_delete">Long press a saved preset to remove it</string>
+    <string name="hint_no_saved_presets">Tap \"+ Save Current\" to keep your favorite colors</string>
+
+    <string name="title_features">Smart Automation</string>
+    <string name="feature_pause_screen_off">Pause when screen is off</string>
+    <string name="feature_pause_screen_off_desc">Turn off LED while display is locked to prevent battery drain</string>
+    <string name="feature_blink_notification">Blink on notification</string>
+    <string name="feature_blink_notification_desc">Pulse the camera ring when new alerts arrive</string>
+    <string name="btn_grant_notif_access">Grant Notification Access</string>
+
+    <string name="title_notification_mode">Notification Behavior</string>
+    <string name="notif_mode_off">Off</string>
+    <string name="notif_mode_off_desc">No custom notification lighting</string>
+    <string name="notif_mode_blink">Blink</string>
+    <string name="notif_mode_blink_desc">Pulse the ring briefly when a notification arrives</string>
+    <string name="notif_mode_activate">Activate Lights</string>
+    <string name="notif_mode_activate_desc">Turn on the ring with saved settings for a set duration</string>
+    <string name="title_notif_duration">Duration: %1$d seconds</string>
+    <string name="notif_activate_running">Notif-Active</string>
+    <string name="audio_reactive_permission_denied">Microphone permission is required for Audio Reactive mode</string>
+    <string name="audio_reactive_permission_rationale">DashDazz needs audio permission to visualize playback. No audio is recorded or uploaded.</string>
+    <string name="audio_reactive_toggle">React to audio</string>
+    <string name="audio_reactive_on_desc">The selected mode is driven by the music</string>
+    <string name="audio_reactive_off_desc">The selected mode runs on its own animation</string>
+    <string name="notif_audio_suffix">+ Audio</string>
+    <string name="dual_beat_rainbow">Beat Rainbow</string>
+    <string name="dual_split_beat">Split Beat</string>
+
+    <string name="audio_tuning_title">Audio Oscilloscope &amp; Tuning</string>
+    <string name="audio_card_title">Audio Reactive</string>
+    <string name="audio_card_desc">Makes the mode you selected react to the music. Beat detection, band tracking and sensitivity are automatic.</string>
+    <string name="audio_open_tuning">Open Audio Oscilloscope &amp; Tuning</string>
+    <string name="audio_waveform_label">Live Waveform (%1$d FPS):</string>
+    <string name="audio_no_signal">NO SIGNAL (FLAT LINE)\nPlay music or switch to Mic</string>
+    <string name="audio_capture_failed">CANNOT CAPTURE AUDIO: %1$s\nGrant the microphone permission and reopen</string>
+    <string name="audio_rms">RMS: %1$d%%</string>
+    <string name="audio_band">Band: %1$d%%</string>
+    <string name="audio_hit">HIT</string>
+    <string name="audio_idle">···</string>
+    <string name="audio_bpm">%1$d BPM</string>
+    <string name="audio_bps">%1$d bps</string>
+    <string name="audio_beat_label">Beat:</string>
+    <string name="audio_spectrum_label">Spectrum:</string>
+    <string name="audio_dual_rainbow">Dual Rainbow:</string>
+    <string name="audio_spot_a">Spot A</string>
+    <string name="audio_spot_b">Spot B</string>
+    <string name="audio_meter_low">LOW</string>
+    <string name="audio_meter_mid">MID</string>
+    <string name="audio_meter_high">HIGH</string>
+    <string name="audio_phase_shift">+ 90° ⟷</string>
+    <string name="audio_band_selected">Selected Band: %1$d Hz – %2$d Hz</string>
+    <string name="audio_min_freq">Min Frequency: %1$d Hz</string>
+    <string name="audio_max_freq">Max Frequency: %1$d Hz</string>
+    <string name="audio_gain">Sensitivity Gain: %1$sx</string>
+    <string name="audio_sensitivity_title">Sensitivity</string>
+    <string name="audio_mode_auto">Automatic</string>
+    <string name="audio_mode_manual">Manual</string>
+    <string name="audio_sensitivity_auto_desc">Gain and beat threshold adjust themselves to hold a steady beat rate on the current track. Touch a slider to take over.</string>
+    <string name="audio_beat_threshold">Beat Sensitivity Threshold: %1$sx</string>
+    <string name="audio_reset">Reset to Defaults</string>
+    <string name="audio_source">Audio Source</string>
+    <string name="audio_source_global">Global Media Mix</string>
+    <string name="audio_source_mic">Microphone</string>
+    <string name="audio_source_band_title">Beat Source</string>
+    <string name="audio_band_mode_auto">Automatic</string>
+    <string name="audio_band_mode_manual">Manual</string>
+    <string name="audio_band_mode_auto_desc">Follows whichever band carries the rhythm of the track — kick, snare, vocals or hats.</string>
+    <string name="audio_band_kick">Kick</string>
+    <string name="audio_band_snare">Snare</string>
+    <string name="audio_band_vocal">Vocal</string>
+    <string name="audio_band_hat">Hat</string>
+    <string name="beat_rainbow_hint">Both rings step the same amount per beat. Hue offset sets how far apart they sit.</string>
+    <string name="dual_split_beat_hint">Each ring holds its own colour and they trade brightness on every beat. Uses the Spot A / Spot B pickers below.</string>
+    <string name="title_beat_rainbow">Beat Rainbow</string>
+    <string name="title_split_beat_colors">Split Beat Colours</string>
+    <string name="label_degrees_per_beat">Degrees per beat: %1$d&#176;</string>
+    <string name="btn_close">Close</string>
+
+    <string name="tab_lighting">Lighting</string>
+    <string name="tab_settings">Settings</string>
+
+    <string name="title_dark_mode">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
+    <string name="title_shizuku">Shizuku Status</string>
+    <string name="title_about">About DashDazz</string>
+    <string name="about_desc">Hardware Camera Ring Controller for POCO X8 Pro Max (Dash) by @ttertekann</string>
+    <string name="about_version">v%1$s · build %2$d</string>
+
+    <string name="title_conflict_warning">HyperOS Conflict Detected</string>
+    <string name="conflict_warning_desc">Stock HyperOS "Rhythmic light" is currently enabled in System Settings. This can cause flickering due to competing signals.</string>
+    <string name="btn_open_settings">Open System Settings</string>
+    <string name="feature_screen_mode_desc">When should the ring light be active?</string>
+    <string name="screen_mode_on">Screen on</string>
+    <string name="screen_mode_off">Screen off</string>
+    <string name="screen_mode_always">Always on</string>
+    <string name="screen_mode_notif_only">Notif Only</string>
+
+    <string name="dual_rainbow_duo">Rainbow Duo</string>
+
+    <string name="title_root">Root Status</string>
+    <string name="root_granted">Root access granted</string>
+    <string name="root_granted_desc">Direct hardware control and Dual Ring effects are available. Tap to re-check.</string>
+    <string name="root_not_available">Root not available</string>
+    <string name="root_not_available_desc">Dual Ring effects are hidden. Grant root to DashDazz, then tap to re-check.</string>
+    <string name="root_checking">Checking root…</string>
+    <string name="root_checking_desc">Please approve the root prompt if one appears</string>
+
+    <string name="setup_title">Welcome to DashDazz</string>
+    <string name="setup_desc">DashDazz controls the camera ring light using Root (full features) or Shizuku (basic modes).</string>
+    <string name="setup_root_ok_desc">Full control and Dual Ring effects unlocked</string>
+    <string name="setup_root_missing_desc">Tap to retry. Without root, Dual Ring effects stay hidden.</string>
+    <string name="setup_shizuku_ok_desc">Basic modes available through Shizuku</string>
+    <string name="setup_need_one">Neither Root nor Shizuku is available yet. You need at least one to control the light.</string>
+    <string name="setup_continue">Continue</string>
+    <string name="setup_continue_anyway">Continue anyway</string>
+</resources>

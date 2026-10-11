@@ -1,0 +1,36 @@
+# Build
+build/
+.gradle/
+.kotlin/
+.idea/
+*.iml
+*.apk
+*.apks
+*.aab
+*.keystore
+*.jks
+*.p12
+*.keystore.jks
+app/*.jks
+local.properties
+
+# Android / native
+.cxx/
+captures/
+.externalNativeBuild/
+
+# Kotlin / Java
+*.class
+out/
+
+# Logs
+*.log
+
+# Editor backups
+*.bak
+*.orig
+*~
+
+# OS
+.DS_Store
+Thumbs.db

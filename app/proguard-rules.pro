@@ -1,0 +1,4 @@
+-keep class com.dashdazz.light.lightsapi.** { *; }
+-keep interface com.dashdazz.light.lightsapi.** { *; }
+-keep class rikka.shizuku.** { *; }
+-keep class rikka.shizuku.ShizukuProvider { *; }
