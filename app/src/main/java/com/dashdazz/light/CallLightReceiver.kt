@@ -23,10 +23,6 @@ class CallLightReceiver : BroadcastReceiver() {
             return
         }
         when (Prefs.getCallMode(context)) {
-            Prefs.NOTIF_MODE_BLINK -> {
-                Log.d(TAG, "Incoming call: pulsing ring")
-                DashDazzService.pulseNotification(context, Prefs.getColor(context))
-            }
             Prefs.NOTIF_MODE_ACTIVATE -> {
                 val durationSec = Prefs.getNotificationActivateDuration(context)
                 Log.d(TAG, "Incoming call: activating lights for ${durationSec}s")

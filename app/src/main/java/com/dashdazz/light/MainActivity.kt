@@ -570,8 +570,6 @@ fun DashDazzScreen(
     var duoHueOffset by remember { mutableIntStateOf(serviceState.duoHueOffset) }
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
-    var showAppPicker by remember { mutableStateOf(false) }
-    var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
     var callMode by remember { mutableIntStateOf(Prefs.getCallMode(context)) }
 
     var snack by remember { mutableStateOf<Triple<String, String?, (() -> Unit)?>?>(null) }
@@ -2121,7 +2119,6 @@ fun DashDazzScreen(
                             ) {
                                 listOf(
                                     Prefs.NOTIF_MODE_OFF to R.string.notif_mode_off,
-                                    Prefs.NOTIF_MODE_BLINK to R.string.notif_mode_blink,
                                     Prefs.NOTIF_MODE_ACTIVATE to R.string.notif_mode_activate
                                 ).forEach { (modeVal, titleRes) ->
                                     val isSelected = (callMode == modeVal)
@@ -2189,7 +2186,6 @@ fun DashDazzScreen(
                                 ) {
                                     listOf(
                                         Prefs.NOTIF_MODE_OFF to R.string.notif_mode_off,
-                                        Prefs.NOTIF_MODE_BLINK to R.string.notif_mode_blink,
                                         Prefs.NOTIF_MODE_ACTIVATE to R.string.notif_mode_activate
                                     ).forEach { (modeVal, titleRes) ->
                                         val isSelected = (serviceState.notifMode == modeVal)
@@ -2208,8 +2204,7 @@ fun DashDazzScreen(
                                                     )
                                                 }
                                                 .clickable {
-                                                    if ((modeVal == Prefs.NOTIF_MODE_ACTIVATE ||
-                                                        modeVal == Prefs.NOTIF_MODE_BLINK) &&
+                                                    if (modeVal == Prefs.NOTIF_MODE_ACTIVATE &&
                                                         !DashDazzNotificationListener.isNotificationAccessGranted(context)
                                                     ) {
                                                         DashDazzNotificationListener.openNotificationAccessSettings(context)
@@ -2238,7 +2233,6 @@ fun DashDazzScreen(
                                     text = stringResource(
                                         when (serviceState.notifMode) {
                                             Prefs.NOTIF_MODE_ACTIVATE -> R.string.notif_mode_activate_desc
-                                            Prefs.NOTIF_MODE_BLINK -> R.string.notif_mode_blink_desc
                                             else -> R.string.notif_mode_off_desc
                                         }
                                     ),
@@ -2247,18 +2241,6 @@ fun DashDazzScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                SuperArrow(
-                                    title = stringResource(R.string.notif_apps_title),
-                                    summary = if (allowedApps.isEmpty()) {
-                                        stringResource(R.string.notif_apps_all)
-                                    } else {
-                                        stringResource(R.string.notif_apps_count, allowedApps.size)
-                                    },
-                                    onClick = {
-                                        allowedApps = Prefs.getNotifApps(context)
-                                        showAppPicker = true
-                                    }
-                                )
 
                                 if (serviceState.notifMode == Prefs.NOTIF_MODE_ACTIVATE) {
                                     Spacer(modifier = Modifier.height(12.dp))
@@ -2368,143 +2350,6 @@ fun DashDazzScreen(
                     onDismiss = { showAudioTuningDialog = false },
                     onResetDefaults = { degreesPerBeat = AudioReactiveEngine.DEFAULT_DEGREES_PER_BEAT }
                 )
-            }
-            if (showAppPicker) {
-                NotifAppPickerDialog(
-                    allowed = allowedApps,
-                    onChange = {
-                        allowedApps = it
-                        Prefs.setNotifApps(context, it)
-                    },
-                    onDismiss = { showAppPicker = false }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun NotifAppPickerDialog(
-    allowed: Set<String>,
-    onChange: (Set<String>) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    val pm = context.packageManager
-    val apps = remember {
-        runCatching {
-            pm.queryIntentActivities(
-                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0
-            ).mapNotNull { it.activityInfo }
-                .filter { it.packageName != context.packageName }
-                .distinctBy { it.packageName }
-                .sortedBy { it.loadLabel(pm).toString().lowercase() }
-        }.getOrDefault(emptyList())
-    }
-    val effective = if (allowed.isEmpty()) apps.map { it.packageName }.toSet() else allowed
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.notif_apps_title),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MiuixTheme.colorScheme.onSurface
-                )
-                SuperSwitch(
-                    title = stringResource(R.string.notif_apps_all),
-                    summary = stringResource(R.string.notif_apps_all_desc),
-                    checked = allowed.isEmpty(),
-                    onCheckedChange = { on -> if (on) onChange(emptySet()) }
-                )
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 320.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    items(apps, key = { it.packageName }) { info ->
-                        val pkg = info.packageName
-                        val on = pkg in effective
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onChange(if (on) effective - pkg else effective + pkg) }
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            val icon = remember(pkg) {
-                                runCatching {
-                                    pm.getApplicationIcon(pkg).toBitmap().asImageBitmap()
-                                }.getOrNull()
-                            }
-                            if (icon != null) {
-                                Image(
-                                    bitmap = icon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            } else {
-                                Box(
-                                    Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(MiuixTheme.colorScheme.surfaceVariant)
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = info.loadLabel(pm).toString(),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1
-                                )
-                                Text(
-                                    text = pkg,
-                                    fontSize = 10.sp,
-                                    color = Color.Gray,
-                                    maxLines = 1
-                                )
-                            }
-                            Box(
-                                Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (on) MiuixTheme.colorScheme.primary
-                                        else Color.Gray.copy(alpha = 0.35f)
-                                    )
-                            )
-                        }
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MiuixTheme.colorScheme.primary)
-                        .clickable { onDismiss() }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.btn_close),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
             }
         }
     }

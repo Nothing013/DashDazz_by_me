@@ -110,17 +110,6 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
         val notifMode = Prefs.getNotificationMode(this)
         when (notifMode) {
-            Prefs.NOTIF_MODE_BLINK -> {
-
-                val color = if (notification.color != 0) {
-                    notification.color
-                } else {
-                    Prefs.getColor(this)
-                }
-
-                Log.d(TAG, "Notification received from ${sbn.packageName}, pulsing ring with color: $color")
-                DashDazzService.pulseNotification(this, color)
-            }
             Prefs.NOTIF_MODE_ACTIVATE -> {
 
                 val durationSec = Prefs.getNotificationActivateDuration(this)

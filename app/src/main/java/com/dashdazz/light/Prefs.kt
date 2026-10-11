@@ -107,8 +107,7 @@ object Prefs {
     }
 
     const val NOTIF_MODE_OFF = 0
-    const val NOTIF_MODE_BLINK = 1
-    const val NOTIF_MODE_ACTIVATE = 2
+    const val NOTIF_MODE_ACTIVATE = 1
 
     private fun prefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -246,7 +245,6 @@ object Prefs {
     const val MAX_CUSTOM_PRESETS = 24
     private const val KEY_CONFLICT_DISMISSED = "key_conflict_dismissed"
     private const val KEY_FRAME_MIN_MS = "key_frame_min_ms"
-    private const val KEY_NOTIF_APPS = "key_notif_apps"
     private const val KEY_CALL_MODE = "key_call_mode"
 
     const val FRAME_SMOOTH_MS = 20L
@@ -265,13 +263,6 @@ object Prefs {
 
     fun setFrameMinMs(context: Context, ms: Long) {
         prefs(context).edit().putLong(KEY_FRAME_MIN_MS, ms.coerceIn(15L, 100L)).apply()
-    }
-
-    fun getNotifApps(context: Context): Set<String> =
-        prefs(context).getStringSet(KEY_NOTIF_APPS, emptySet())?.toSet() ?: emptySet()
-
-    fun setNotifApps(context: Context, pkgs: Set<String>) {
-        prefs(context).edit().putStringSet(KEY_NOTIF_APPS, pkgs.toSet()).apply()
     }
 
     fun getCallMode(context: Context): Int =
@@ -321,8 +312,8 @@ object Prefs {
         val p = prefs(context)
         if (!p.contains(KEY_NOTIF_MODE)) {
             if (p.getBoolean(KEY_BLINK_ON_NOTIFICATION, false)) {
-                p.edit().putInt(KEY_NOTIF_MODE, NOTIF_MODE_BLINK).apply()
-                return NOTIF_MODE_BLINK
+                p.edit().putInt(KEY_NOTIF_MODE, NOTIF_MODE_ACTIVATE).apply()
+                return NOTIF_MODE_ACTIVATE
             }
             return default.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
         }
