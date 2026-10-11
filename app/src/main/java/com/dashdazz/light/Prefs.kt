@@ -245,6 +245,10 @@ object Prefs {
     const val MAX_CUSTOM_PRESETS = 24
     private const val KEY_CONFLICT_DISMISSED = "key_conflict_dismissed"
     private const val KEY_FRAME_MIN_MS = "key_frame_min_ms"
+    private const val KEY_NOTIF_APPS = "key_notif_apps"
+    private const val KEY_NOTIF_APP_CFG = "key_notif_app_cfg"
+
+    data class AppNotifConfig(val color: Int?, val durationSec: Int?)
 
     const val FRAME_SMOOTH_MS = 20L
     const val FRAME_BALANCED_MS = 33L
@@ -259,6 +263,46 @@ object Prefs {
 
     fun getFrameMinMs(context: Context): Long =
         prefs(context).getLong(KEY_FRAME_MIN_MS, FRAME_SMOOTH_MS).coerceIn(15L, 100L)
+
+    fun getNotifApps(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_NOTIF_APPS, emptySet())?.toSet() ?: emptySet()
+
+    fun setNotifApps(context: Context, pkgs: Set<String>) {
+        prefs(context).edit().putStringSet(KEY_NOTIF_APPS, pkgs.toSet()).apply()
+    }
+
+    fun getAppNotifConfig(context: Context, pkg: String): AppNotifConfig {
+        val raw = prefs(context).getString(KEY_NOTIF_APP_CFG, null) ?: return AppNotifConfig(null, null)
+        for (entry in raw.split(";")) {
+            val kv = entry.split("=", limit = 2)
+            if (kv.size != 2 || kv[0] != pkg) continue
+            val parts = kv[1].split(",")
+            val color = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it != 0 }
+            val duration = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..60 }
+            return AppNotifConfig(color, duration)
+        }
+        return AppNotifConfig(null, null)
+    }
+
+    fun setAppNotifConfig(context: Context, pkg: String, color: Int?, durationSec: Int?) {
+        val map = LinkedHashMap<String, Pair<Int?, Int?>>()
+        val raw = prefs(context).getString(KEY_NOTIF_APP_CFG, null)
+        if (raw != null) {
+            for (entry in raw.split(";")) {
+                val kv = entry.split("=", limit = 2)
+                if (kv.size != 2) continue
+                val parts = kv[1].split(",")
+                map[kv[0]] = parts.getOrNull(0)?.toIntOrNull() to parts.getOrNull(1)?.toIntOrNull()
+            }
+        }
+        if (color == null && durationSec == null) {
+            map.remove(pkg)
+        } else {
+            map[pkg] = (color ?: 0) to (durationSec ?: -1)
+        }
+        val encoded = map.entries.joinToString(";") { (k, v) -> "$k=${v.first ?: 0},${v.second ?: -1}" }
+        prefs(context).edit().putString(KEY_NOTIF_APP_CFG, encoded).apply()
+    }
 
     fun getCustomPresets(context: Context): List<Pair<Float, Float>> {
         val raw = prefs(context).getString(KEY_CUSTOM_PRESETS, null) ?: return emptyList()

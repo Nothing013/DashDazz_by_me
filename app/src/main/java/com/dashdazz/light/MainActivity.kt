@@ -552,6 +552,8 @@ fun DashDazzScreen(
     var duoHueOffset by remember { mutableIntStateOf(serviceState.duoHueOffset) }
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
+    var showAppPicker by remember { mutableStateOf(false) }
+    var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
 
     var snack by remember { mutableStateOf<Triple<String, String?, (() -> Unit)?>?>(null) }
     LaunchedEffect(snack) {
@@ -2150,6 +2152,19 @@ fun DashDazzScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
+                                SuperArrow(
+                                    title = stringResource(R.string.notif_apps_title),
+                                    summary = if (allowedApps.isEmpty()) {
+                                        stringResource(R.string.notif_apps_all)
+                                    } else {
+                                        stringResource(R.string.notif_apps_count, allowedApps.size)
+                                    },
+                                    onClick = {
+                                        allowedApps = Prefs.getNotifApps(context)
+                                        showAppPicker = true
+                                    }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
 
                                 if (serviceState.notifMode == Prefs.NOTIF_MODE_ACTIVATE) {
                                     Spacer(modifier = Modifier.height(12.dp))
@@ -2280,6 +2295,272 @@ fun DashDazzScreen(
                     onDismiss = { showAudioTuningDialog = false },
                     onResetDefaults = { degreesPerBeat = AudioReactiveEngine.DEFAULT_DEGREES_PER_BEAT }
                 )
+            }
+            if (showAppPicker) {
+                NotifAppPickerDialog(
+                    allowed = allowedApps,
+                    onChange = {
+                        allowedApps = it
+                        Prefs.setNotifApps(context, it)
+                    },
+                    onDismiss = { showAppPicker = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NotifAppPickerDialog(
+    allowed: Set<String>,
+    onChange: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val pm = context.packageManager
+    val apps = remember {
+        runCatching {
+            pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                .filter { it.packageName != context.packageName }
+                .sortedBy {
+                    runCatching { pm.getApplicationLabel(it).toString().lowercase() }
+                        .getOrDefault(it.packageName)
+                }
+        }.getOrDefault(emptyList())
+    }
+    val effective = if (allowed.isEmpty()) apps.map { it.packageName }.toSet() else allowed
+    var expandedPkg by remember { mutableStateOf<String?>(null) }
+    var cfgTick by remember { mutableIntStateOf(0) }
+    val quickColors = listOf(
+        Color(0xFFFF0000), Color(0xFFFF9800), Color(0xFFFFEB3B), Color(0xFF4CAF50),
+        Color(0xFF00BCD4), Color(0xFF2196F3), Color(0xFF9C27B0), Color(0xFFFFFFFF)
+    )
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.notif_apps_title),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MiuixTheme.colorScheme.onSurface
+                )
+                SuperSwitch(
+                    title = stringResource(R.string.notif_apps_all),
+                    summary = stringResource(R.string.notif_apps_all_desc),
+                    checked = allowed.isEmpty(),
+                    onCheckedChange = { on -> if (on) onChange(emptySet()) }
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(apps, key = { it.packageName }) { info ->
+                        val pkg = info.packageName
+                        val on = pkg in effective
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onChange(if (on) effective - pkg else effective + pkg) }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            val icon = remember(pkg) {
+                                runCatching {
+                                    pm.getApplicationIcon(pkg).toBitmap().asImageBitmap()
+                                }.getOrNull()
+                            }
+                            if (icon != null) {
+                                Image(
+                                    bitmap = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            } else {
+                                Box(
+                                    Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(MiuixTheme.colorScheme.surfaceVariant)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = runCatching { pm.getApplicationLabel(info).toString() }
+                                        .getOrDefault(pkg),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = pkg,
+                                    fontSize = 10.sp,
+                                    color = Color.Gray,
+                                    maxLines = 1
+                                )
+                            }
+                            if (on) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (expandedPkg == pkg) MiuixTheme.colorScheme.primary
+                                            else MiuixTheme.colorScheme.surfaceVariant
+                                        )
+                                        .clickable { expandedPkg = if (expandedPkg == pkg) null else pkg }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.notif_app_custom),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (expandedPkg == pkg) Color.White
+                                        else MiuixTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                            Box(
+                                Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (on) MiuixTheme.colorScheme.primary
+                                        else Color.Gray.copy(alpha = 0.35f)
+                                    )
+                            )
+                        }
+                        if (expandedPkg == pkg && on) {
+                            cfgTick.let {}
+                            val cfg = Prefs.getAppNotifConfig(context, pkg)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 44.dp, end = 4.dp, bottom = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (cfg.color == null) MiuixTheme.colorScheme.primary
+                                                else MiuixTheme.colorScheme.surfaceVariant
+                                            )
+                                            .clickable {
+                                                Prefs.setAppNotifConfig(context, pkg, null, cfg.durationSec)
+                                                cfgTick++
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.notif_app_default),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (cfg.color == null) Color.White
+                                            else MiuixTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    quickColors.forEach { qColor ->
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .clip(CircleShape)
+                                                .background(qColor)
+                                                .border(
+                                                    width = if (cfg.color == qColor.toArgb()) 2.dp else 1.dp,
+                                                    color = if (cfg.color == qColor.toArgb()) MiuixTheme.colorScheme.primary
+                                                    else Color.Gray.copy(alpha = 0.4f),
+                                                    shape = CircleShape
+                                                )
+                                                .clickable {
+                                                    Prefs.setAppNotifConfig(context, pkg, qColor.toArgb(), cfg.durationSec)
+                                                    cfgTick++
+                                                }
+                                        )
+                                    }
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.title_notif_duration,
+                                            cfg.durationSec ?: Prefs.getNotificationActivateDuration(context)
+                                        ),
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MiuixTheme.colorScheme.surfaceVariant)
+                                            .clickable {
+                                                Prefs.setAppNotifConfig(context, pkg, cfg.color, null)
+                                                cfgTick++
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.notif_app_reset),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MiuixTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                                Slider(
+                                    progress = (cfg.durationSec
+                                        ?: Prefs.getNotificationActivateDuration(context)).toFloat(),
+                                    onProgressChange = { value ->
+                                        Prefs.setAppNotifConfig(
+                                            context, pkg, cfg.color,
+                                            value.toInt().coerceIn(1, 60)
+                                        )
+                                        cfgTick++
+                                    },
+                                    minValue = 1f,
+                                    maxValue = 60f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MiuixTheme.colorScheme.primary)
+                        .clickable { onDismiss() }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.btn_close),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
     }

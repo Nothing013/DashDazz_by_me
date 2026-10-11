@@ -66,6 +66,7 @@ class DashDazzService : Service() {
 
         const val EXTRA_MODE = "extra_mode"
         const val EXTRA_COLOR = "extra_color"
+        const val EXTRA_PULSE_HOLD_MS = "extra_pulse_hold_ms"
         const val EXTRA_SPEED_MS = "extra_speed_ms"
         const val EXTRA_BRIGHTNESS = "extra_brightness"
         const val EXTRA_SCREEN_MODE = "extra_screen_mode"
@@ -341,10 +342,11 @@ class DashDazzService : Service() {
             }
         }
 
-        fun pulseNotification(context: Context, color: Int) {
+        fun pulseNotification(context: Context, color: Int, holdMs: Long? = null) {
             val intent = Intent(context, DashDazzService::class.java).apply {
                 action = ACTION_PULSE
                 putExtra(EXTRA_COLOR, color)
+                putExtra(EXTRA_PULSE_HOLD_MS, holdMs ?: -1L)
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -496,7 +498,8 @@ class DashDazzService : Service() {
                     return START_NOT_STICKY
                 }
                 val pulseColor = intent.getIntExtra(EXTRA_COLOR, _stateFlow.value.color)
-                handleNotificationPulse(pulseColor)
+                val pulseHold = intent.getLongExtra(EXTRA_PULSE_HOLD_MS, -1L).takeIf { it > 0 }
+                handleNotificationPulse(pulseColor, pulseHold)
                 return START_NOT_STICKY
             }
             ACTION_ACTIVATE -> {
@@ -1189,7 +1192,7 @@ class DashDazzService : Service() {
         }
     }
 
-    private fun handleNotificationPulse(pulseColor: Int) {
+    private fun handleNotificationPulse(pulseColor: Int, holdMs: Long? = null) {
         val gen = ++pulseGen
 
         activateGen++
@@ -1215,18 +1218,39 @@ class DashDazzService : Service() {
                 Color.colorToHSV(pulseColor, hsv)
                 val maxBright = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
 
-                for (cycle in 0 until 2) {
-                    ensureActive()
-                    if (gen != pulseGen) return@launch
-                    val steps = 25
-                    for (i in 0..steps) {
+                if (holdMs != null && holdMs > 0) {
+                    val fade = (holdMs / 4).coerceIn(100L, 500L)
+                    val inSteps = 15
+                    val stepDelay = maxOf(1L, fade / inSteps)
+                    for (i in 0..inSteps) {
                         ensureActive()
-                        val progress = sin(Math.PI * i / steps).toFloat()
-                        val pulseHsv = floatArrayOf(hsv[0], hsv[1], progress * maxBright)
-                        LightsBridge.setCameraRing(Color.HSVToColor(pulseHsv))
-                        delay(18)
+                        if (gen != pulseGen) return@launch
+                        val f = i.toFloat() / inSteps
+                        LightsBridge.setCameraRing(Color.HSVToColor(floatArrayOf(hsv[0], hsv[1], f * maxBright)))
+                        delay(stepDelay)
                     }
-                    delay(60)
+                    delay((holdMs - 2 * fade).coerceAtLeast(0L))
+                    for (i in inSteps downTo 0) {
+                        ensureActive()
+                        if (gen != pulseGen) return@launch
+                        val f = i.toFloat() / inSteps
+                        LightsBridge.setCameraRing(Color.HSVToColor(floatArrayOf(hsv[0], hsv[1], f * maxBright)))
+                        delay(stepDelay)
+                    }
+                } else {
+                    for (cycle in 0 until 2) {
+                        ensureActive()
+                        if (gen != pulseGen) return@launch
+                        val steps = 25
+                        for (i in 0..steps) {
+                            ensureActive()
+                            val progress = sin(Math.PI * i / steps).toFloat()
+                            val pulseHsv = floatArrayOf(hsv[0], hsv[1], progress * maxBright)
+                            LightsBridge.setCameraRing(Color.HSVToColor(pulseHsv))
+                            delay(18)
+                        }
+                        delay(60)
+                    }
                 }
             } finally {
                 if (gen != pulseGen) return@launch

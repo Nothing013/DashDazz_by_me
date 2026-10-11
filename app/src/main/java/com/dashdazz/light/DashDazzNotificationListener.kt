@@ -116,13 +116,22 @@ class DashDazzNotificationListener : NotificationListenerService() {
         if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
         if ((notification.flags and Notification.FLAG_NO_CLEAR) != 0) return
 
+        val allowedApps = Prefs.getNotifApps(this)
+        if (allowedApps.isNotEmpty() && sbn.packageName !in allowedApps) return
+
         val notifMode = Prefs.getNotificationMode(this)
         when (notifMode) {
             Prefs.NOTIF_MODE_ACTIVATE -> {
 
                 val durationSec = Prefs.getNotificationActivateDuration(this)
+                val cfg = Prefs.getAppNotifConfig(this, sbn.packageName)
                 Log.d(TAG, "Notification received from ${sbn.packageName}, activating lights for ${durationSec}s")
-                DashDazzService.activateForNotification(this, durationSec)
+                if (cfg.color != null) {
+                    val holdMs = ((cfg.durationSec ?: durationSec).coerceIn(1, 60)) * 1000L
+                    DashDazzService.pulseNotification(this, cfg.color, holdMs)
+                } else {
+                    DashDazzService.activateForNotification(this, durationSec)
+                }
             }
             else -> {
 
