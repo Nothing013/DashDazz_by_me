@@ -39,9 +39,12 @@ dashdazz.keyPassword=...
 dashdazz.keyAlias=...
 ```
 
-## Releases
+## Get the app
 
-Push a tag matching the version (`v2.0.49`) and the `release.yml` workflow verifies the tag against the APK version, builds a signed release, and attaches it to the GitHub Release.
+1. Download the latest APK from the [**Releases page**](https://github.com/olivia-hye/DashDazz/releases).
+2. Install it on your phone (allow install from unknown sources when asked).
+3. Open DashDazz and grant access: **Root** for full features incl. Dual Ring, or start **Shizuku** for basic modes with no root.
+4. Pick a lighting mode, tune colors and speed, and turn the ring on. Optionally enable Audio Reactive (needs microphone permission) or notification lighting.
 
 ## License
 
