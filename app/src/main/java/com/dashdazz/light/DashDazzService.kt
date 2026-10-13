@@ -81,6 +81,7 @@ class DashDazzService : Service() {
         const val EXTRA_NOTIF_MODE = "extra_notif_mode"
         const val EXTRA_NOTIF_ACTIVATE_DURATION = "extra_notif_activate_duration"
         const val EXTRA_ACTIVATE_DURATION = "extra_activate_duration"
+        const val EXTRA_FORCE = "extra_force"
 
         const val MODE_RAINBOW = 0
         const val MODE_BREATHE = 1
@@ -378,6 +379,19 @@ class DashDazzService : Service() {
             }
         }
 
+        fun flashScreenEvent(context: Context) {
+            val intent = Intent(context, DashDazzService::class.java).apply {
+                action = ACTION_PULSE
+                putExtra(EXTRA_COLOR, Prefs.getColor(context))
+                putExtra(EXTRA_FORCE, true)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
         fun notifyTileState(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 try {
@@ -442,12 +456,18 @@ class DashDazzService : Service() {
                         Log.d(TAG, "Screen OFF received: applying screen policy")
                         evaluateScreenPolicy()
                     }
+                    if (_stateFlow.value.isRunning && Prefs.isFlashOnLock(this@DashDazzService)) {
+                        flashScreenEvent(this@DashDazzService)
+                    }
                 }
                 Intent.ACTION_SCREEN_ON -> {
                     screenInteractive = true
                     if (_stateFlow.value.isRunning) {
                         Log.d(TAG, "Screen ON received: applying screen policy")
                         evaluateScreenPolicy()
+                    }
+                    if (_stateFlow.value.isRunning && Prefs.isFlashOnUnlock(this@DashDazzService)) {
+                        flashScreenEvent(this@DashDazzService)
                     }
                 }
                 Intent.ACTION_POWER_CONNECTED -> {
@@ -487,6 +507,10 @@ class DashDazzService : Service() {
 
         restoreStateFromPrefs(this)
 
+        scope.launch {
+            runCatching { LightsBridge.turnOff() }
+        }
+
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
@@ -516,7 +540,8 @@ class DashDazzService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_PULSE -> {
-                if (Prefs.getNotificationMode(this) == Prefs.NOTIF_MODE_OFF) {
+                val force = intent?.getBooleanExtra(EXTRA_FORCE, false) ?: false
+                if (!force && Prefs.getNotificationMode(this) == Prefs.NOTIF_MODE_OFF) {
                     return START_NOT_STICKY
                 }
                 val pulseColor = intent.getIntExtra(EXTRA_COLOR, _stateFlow.value.color)
@@ -595,6 +620,9 @@ class DashDazzService : Service() {
 
                 startAsForeground()
                 rebindNotificationListener()
+                scope.launch {
+                    runCatching { LightsBridge.ensureBackgroundSurvival(packageName) }
+                }
 
                 if (newScreenMode == SCREEN_NOTIF_ONLY) {
 
@@ -1433,6 +1461,14 @@ class DashDazzService : Service() {
         notifyTileState(this)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        try {
+            LightsBridge.turnOff()
+        } catch (_: Throwable) {
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {

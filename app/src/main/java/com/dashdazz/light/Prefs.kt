@@ -247,6 +247,8 @@ object Prefs {
     private const val KEY_FRAME_MIN_MS = "key_frame_min_ms"
     private const val KEY_NOTIF_APPS = "key_notif_apps"
     private const val KEY_NOTIF_APPS_FILTER = "key_notif_apps_filter"
+    private const val KEY_FLASH_ON_LOCK = "key_flash_on_lock"
+    private const val KEY_FLASH_ON_UNLOCK = "key_flash_on_unlock"
     private const val KEY_NOTIF_APP_CFG = "key_notif_app_cfg"
 
     data class AppNotifConfig(val color: Int?, val durationSec: Int?)
@@ -286,6 +288,20 @@ object Prefs {
 
     fun setNotifAppsFilter(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_NOTIF_APPS_FILTER, enabled).apply()
+    }
+
+    fun isFlashOnLock(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FLASH_ON_LOCK, false)
+
+    fun setFlashOnLock(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FLASH_ON_LOCK, enabled).apply()
+    }
+
+    fun isFlashOnUnlock(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FLASH_ON_UNLOCK, false)
+
+    fun setFlashOnUnlock(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FLASH_ON_UNLOCK, enabled).apply()
     }
 
     fun getAppNotifConfig(context: Context, pkg: String): AppNotifConfig {

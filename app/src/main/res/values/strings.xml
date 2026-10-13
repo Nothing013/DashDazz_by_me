@@ -8,6 +8,14 @@
     <string name="notification_notif_only">Notif Only (Lights Off)</string>
     <string name="action_turn_off">Turn Off</string>
     <string name="notification_listener_label">DashDazz Notification Sync</string>
+    <string name="survival_title">Background survival</string>
+    <string name="survival_desc">Whitelist from power saving so the light survives. Tap to re-apply.</string>
+    <string name="survival_ok">Survival protection applied</string>
+    <string name="survival_failed">Could not apply protection</string>
+    <string name="flash_lock_title">Flash on lock</string>
+    <string name="flash_lock_desc">Pulse the ring when the screen turns off</string>
+    <string name="flash_unlock_title">Flash on unlock</string>
+    <string name="flash_unlock_desc">Pulse the ring when the screen turns on</string>
     <string name="notif_app_custom">Custom</string>
     <string name="notif_app_default">Default</string>
     <string name="notif_app_reset">Reset</string>

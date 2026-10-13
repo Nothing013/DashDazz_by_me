@@ -169,6 +169,16 @@ object LightsBridge {
         }
     }
 
+    fun ensureBackgroundSurvival(packageName: String): Boolean {
+        if (!isRootAvailable()) return false
+        var ok = true
+        ok = runRoot("cmd deviceidle whitelist +$packageName") && ok
+        ok = runRoot("am set-standby-bucket $packageName active") && ok
+        ok = runRoot("cmd appops set $packageName AUTO_START allow") && ok
+        if (ok) Log.d(TAG, "Background survival protection applied")
+        return ok
+    }
+
     private var fastShell: Process? = null
     private var fastWriter: java.io.OutputStream? = null
     private val fastLock = Any()

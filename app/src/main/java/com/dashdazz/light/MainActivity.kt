@@ -102,6 +102,11 @@ class MainActivity : ComponentActivity() {
         checkNotificationPermission()
 
         checkRootStatusAsync()
+        Thread {
+            if (!DashDazzService.isRunning) {
+                runCatching { LightsBridge.turnOff() }
+            }
+        }.start()
 
         setContent {
             val systemDark = isSystemInDarkTheme()
@@ -552,6 +557,8 @@ fun DashDazzScreen(
     var brightness by remember { mutableFloatStateOf(serviceState.brightness) }
     var duoHueOffset by remember { mutableIntStateOf(serviceState.duoHueOffset) }
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
+    var flashLock by remember { mutableStateOf(Prefs.isFlashOnLock(context)) }
+    var flashUnlock by remember { mutableStateOf(Prefs.isFlashOnUnlock(context)) }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
@@ -2025,6 +2032,25 @@ fun DashDazzScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
+                            SuperSwitch(
+                                title = stringResource(R.string.flash_lock_title),
+                                summary = stringResource(R.string.flash_lock_desc),
+                                checked = flashLock,
+                                onCheckedChange = {
+                                    flashLock = it
+                                    Prefs.setFlashOnLock(context, it)
+                                }
+                            )
+                            SuperSwitch(
+                                title = stringResource(R.string.flash_unlock_title),
+                                summary = stringResource(R.string.flash_unlock_desc),
+                                checked = flashUnlock,
+                                onCheckedChange = {
+                                    flashUnlock = it
+                                    Prefs.setFlashOnUnlock(context, it)
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = stringResource(R.string.title_frame_rate),
                                 fontSize = 14.sp,
@@ -2236,6 +2262,29 @@ fun DashDazzScreen(
                                 ),
                                 onClick = onRecheckRoot
                             )
+                            if (isRootAvailable) {
+                                SuperArrow(
+                                    title = stringResource(R.string.survival_title),
+                                    summary = stringResource(R.string.survival_desc),
+                                    onClick = {
+                                        Thread {
+                                            val ok = runCatching {
+                                                LightsBridge.ensureBackgroundSurvival(context.packageName)
+                                            }.getOrDefault(false)
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(
+                                                        if (ok) R.string.survival_ok
+                                                        else R.string.survival_failed
+                                                    ),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }.start()
+                                    }
+                                )
+                            }
                         }
                     }
 
