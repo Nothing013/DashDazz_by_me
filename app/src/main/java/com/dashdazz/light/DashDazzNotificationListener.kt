@@ -39,10 +39,19 @@ class DashDazzNotificationListener : NotificationListenerService() {
     }
 
     private fun handleMediaSessionChange(controllers: List<MediaController>?) {
-        val anyPlaying = controllers?.any { ctrl ->
+        val playingNow = controllers?.mapNotNull { ctrl ->
             val state = ctrl.playbackState
-            state != null && state.state == PlaybackState.STATE_PLAYING
-        } ?: false
+            if (state != null && state.state == PlaybackState.STATE_PLAYING) {
+                runCatching { ctrl.packageName }.getOrNull()
+            } else {
+                null
+            }
+        }?.toSet() ?: emptySet()
+        val anyPlaying = playingNow.isNotEmpty()
+        if (playingNow != playingPackages) {
+            playingPackages = playingNow
+            listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+        }
 
         if (anyPlaying && !mediaWasPlaying) {
 
@@ -54,14 +63,23 @@ class DashDazzNotificationListener : NotificationListenerService() {
                 for (waitMs in schedule) {
                     delay(waitMs)
                     if (!DashDazzService.isRunning) continue
-                    val stillPlaying = runCatching {
+                    val stillPlayingPkgs = runCatching {
                         val sessions = getSystemService(MediaSessionManager::class.java)
                             ?.getActiveSessions(ComponentName(this@DashDazzNotificationListener,
                                 DashDazzNotificationListener::class.java))
-                        sessions?.any { c ->
-                            c.playbackState?.state == PlaybackState.STATE_PLAYING
-                        } ?: false
-                    }.getOrDefault(false)
+                        sessions?.mapNotNull { c ->
+                            if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                                runCatching { c.packageName }.getOrNull()
+                            } else {
+                                null
+                            }
+                        }?.toSet() ?: emptySet()
+                    }.getOrDefault(emptySet())
+                    val stillPlaying = stillPlayingPkgs.isNotEmpty()
+                    if (stillPlayingPkgs != playingPackages) {
+                        playingPackages = stillPlayingPkgs
+                        listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+                    }
                     if (stillPlaying && !DashDazzService.stateFlow.value.isScreenPaused) {
                         LightsBridge.resetScene()
                     } else if (!stillPlaying) {
@@ -165,6 +183,10 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "DashDazzNotif"
+
+        @Volatile
+        var playingPackages: Set<String> = emptySet()
+            private set
 
         fun isNotificationAccessGranted(context: Context): Boolean {
             val enabledListeners = Settings.Secure.getString(

@@ -546,6 +546,7 @@ object AudioReactiveEngine {
     @Volatile private var vizSampleRateHz = 44100
 
     @Volatile private var running = false
+    @Volatile private var previewOwned = false
 
     @Volatile var captureError: String? = null; private set
     @Volatile private var captureErrorRetryable = true
@@ -744,6 +745,11 @@ object AudioReactiveEngine {
 
     fun start(): Boolean {
         if (running) return true
+        if (!isAudioSourceAllowed()) {
+            captureError = "No allowlisted app playing"
+            _diagnostics.value = AudioDiagnostics(engineRunning = false, captureError = captureError)
+            return false
+        }
         resetDsp()
         val ok = if (audioSource == SOURCE_MIC) startMicCapture() else startVisualizer()
         if (!ok) {
@@ -775,15 +781,41 @@ object AudioReactiveEngine {
         start()
     }
 
+    fun isAudioSourceAllowed(): Boolean {
+        if (audioSource == SOURCE_MIC) return true
+        val ctx = appContext ?: return true
+        if (!Prefs.isAudioAppsFilter(ctx)) return true
+        if (!DashDazzNotificationListener.isNotificationAccessGranted(ctx)) return true
+        val allowed = Prefs.getAudioApps(ctx)
+        if (allowed.isEmpty()) return true
+        return DashDazzNotificationListener.playingPackages.any { it in allowed }
+    }
+
+    fun refreshAudioGate() {
+        if (!isAudioSourceAllowed()) {
+            if (running) stop()
+            return
+        }
+        val driving = DashDazzService.isRunning &&
+            DashDazzService.stateFlow.value.audioReactive &&
+            !DashDazzService.stateFlow.value.isScreenPaused
+        if (driving && !running) restart()
+    }
+
     fun ensurePreview(context: Context) {
         if (running) return
         loadFromPrefs(context)
-        start()
+        previewOwned = start()
     }
 
     fun endPreview() {
-        if (DashDazzService.isRunning) return
+        if (!previewOwned) return
+        previewOwned = false
         stop()
+    }
+
+    fun disownPreview() {
+        previewOwned = false
     }
 
     fun stop(clearError: Boolean = true) {        val wasRunning = running

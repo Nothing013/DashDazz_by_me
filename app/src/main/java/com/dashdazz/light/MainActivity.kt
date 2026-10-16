@@ -559,10 +559,14 @@ fun DashDazzScreen(
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
     var flashLock by remember { mutableStateOf(Prefs.isFlashOnLock(context)) }
     var flashUnlock by remember { mutableStateOf(Prefs.isFlashOnUnlock(context)) }
+    var autoCharging by remember { mutableStateOf(Prefs.isAutoCharging(context)) }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
     var appsFilterOn by remember { mutableStateOf(Prefs.isNotifAppsFilter(context)) }
+    var showAudioAppPicker by remember { mutableStateOf(false) }
+    var audioAllowedApps by remember { mutableStateOf(Prefs.getAudioApps(context)) }
+    var audioAppsFilterOn by remember { mutableStateOf(Prefs.isAudioAppsFilter(context)) }
 
     var snack by remember { mutableStateOf<Triple<String, String?, (() -> Unit)?>?>(null) }
     LaunchedEffect(snack) {
@@ -839,6 +843,7 @@ fun DashDazzScreen(
                                         add(DashDazzService.MODE_BREATHE to R.string.mode_breathe)
                                     }
                                     add(DashDazzService.MODE_SOLID to R.string.mode_solid)
+                                    add(DashDazzService.MODE_CHARGING to R.string.mode_charging)
                                     if (isRootAvailable) {
                                         add(DashDazzService.MODE_DUAL to R.string.mode_dual)
                                     }
@@ -1517,6 +1522,7 @@ fun DashDazzScreen(
                                 Spacer(modifier = Modifier.height(12.dp))
 
                                 val isColorGone = serviceState.mode == DashDazzService.MODE_RAINBOW ||
+                                        serviceState.mode == DashDazzService.MODE_CHARGING ||
                                         (serviceState.mode == DashDazzService.MODE_DUAL &&
                                         (!isRootAvailable ||
                                         (serviceState.dualStyle != DashDazzService.DUAL_HARDWARE_SPLIT &&
@@ -1627,7 +1633,8 @@ fun DashDazzScreen(
                         }
 
                     if (serviceState.mode != DashDazzService.MODE_DUAL &&
-                        serviceState.mode != DashDazzService.MODE_RAINBOW) {
+                        serviceState.mode != DashDazzService.MODE_RAINBOW &&
+                        serviceState.mode != DashDazzService.MODE_CHARGING) {
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
@@ -1969,6 +1976,20 @@ fun DashDazzScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
+                            SuperArrow(
+                                title = stringResource(R.string.audio_apps_title),
+                                summary = if (!audioAppsFilterOn) {
+                                    stringResource(R.string.audio_apps_all)
+                                } else {
+                                    stringResource(R.string.audio_apps_count, audioAllowedApps.size)
+                                },
+                                onClick = {
+                                    audioAllowedApps = Prefs.getAudioApps(context)
+                                    audioAppsFilterOn = Prefs.isAudioAppsFilter(context)
+                                    showAudioAppPicker = true
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
 
@@ -2048,6 +2069,15 @@ fun DashDazzScreen(
                                 onCheckedChange = {
                                     flashUnlock = it
                                     Prefs.setFlashOnUnlock(context, it)
+                                }
+                            )
+                            SuperSwitch(
+                                title = stringResource(R.string.auto_charging_title),
+                                summary = stringResource(R.string.auto_charging_desc),
+                                checked = autoCharging,
+                                onCheckedChange = {
+                                    autoCharging = it
+                                    DashDazzService.setAutoCharging(context, it)
                                 }
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -2364,6 +2394,26 @@ fun DashDazzScreen(
                     onDismiss = { showAppPicker = false }
                 )
             }
+            if (showAudioAppPicker) {
+                NotifAppPickerDialog(
+                    allowed = audioAllowedApps,
+                    filterOn = audioAppsFilterOn,
+                    onFilterChange = {
+                        audioAppsFilterOn = it
+                        Prefs.setAudioAppsFilter(context, it)
+                    },
+                    onChange = {
+                        audioAllowedApps = it
+                        Prefs.setAudioApps(context, it)
+                    },
+                    onDismiss = { showAudioAppPicker = false },
+                    titleRes = R.string.audio_apps_title,
+                    allTitleRes = R.string.audio_apps_all,
+                    allDescRes = R.string.audio_apps_all_desc,
+                    showCustomizer = false,
+                    micNoteRes = R.string.audio_apps_mic_note
+                )
+            }
         }
     }
 }
@@ -2374,7 +2424,12 @@ fun NotifAppPickerDialog(
     filterOn: Boolean,
     onFilterChange: (Boolean) -> Unit,
     onChange: (Set<String>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    titleRes: Int = R.string.notif_apps_title,
+    allTitleRes: Int = R.string.notif_apps_all,
+    allDescRes: Int = R.string.notif_apps_all_desc,
+    showCustomizer: Boolean = true,
+    micNoteRes: Int? = null
 ) {
     val context = LocalContext.current
     val pm = context.packageManager
@@ -2415,14 +2470,21 @@ fun NotifAppPickerDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.notif_apps_title),
+                    text = stringResource(titleRes),
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = MiuixTheme.colorScheme.onSurface
                 )
+                if (micNoteRes != null && AudioReactiveEngine.audioSource == AudioReactiveEngine.SOURCE_MIC) {
+                    Text(
+                        text = stringResource(micNoteRes),
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
                 SuperSwitch(
-                    title = stringResource(R.string.notif_apps_all),
-                    summary = stringResource(R.string.notif_apps_all_desc),
+                    title = stringResource(allTitleRes),
+                    summary = stringResource(allDescRes),
                     checked = !filterOn,
                     onCheckedChange = { on ->
                         if (on) {
@@ -2492,7 +2554,7 @@ fun NotifAppPickerDialog(
                                     maxLines = 1
                                 )
                             }
-                            if (on) {
+                            if (on && showCustomizer) {
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
@@ -2523,7 +2585,7 @@ fun NotifAppPickerDialog(
                                     )
                             )
                         }
-                        if (expandedPkg == pkg && on) {
+                        if (showCustomizer && expandedPkg == pkg && on) {
                             cfgTick.let {}
                             val cfg = Prefs.getAppNotifConfig(context, pkg)
                             Column(

@@ -13,6 +13,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.Color as AndroidColor
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.service.quicksettings.TileService
@@ -89,6 +90,8 @@ class DashDazzService : Service() {
         const val MODE_DUAL = 3
 
         const val MODE_AUDIO_REACTIVE = 4
+
+        const val MODE_CHARGING = 5
 
         const val SCREEN_ON_ONLY = 0
         const val SCREEN_OFF_ONLY = 1
@@ -196,6 +199,14 @@ class DashDazzService : Service() {
             }
         }
 
+        fun setAutoCharging(context: Context, enabled: Boolean) {
+            Prefs.setAutoCharging(context, enabled)
+            val svc = activeService
+            if (!enabled && svc != null && svc.autoChargeActive) {
+                svc.exitChargingMode()
+            }
+        }
+
         fun updateSettings(
             context: Context,
             mode: Int? = null,
@@ -275,6 +286,9 @@ class DashDazzService : Service() {
             }
 
             val target = activeService
+            if (modeChanged) {
+                target?.let { if (it.autoChargeActive) it.autoChargeActive = false }
+            }
             if (target == null && current.isRunning) {
 
                 start(
@@ -439,6 +453,14 @@ class DashDazzService : Service() {
     private var activateGen = 0L
     @Volatile
     private var activateJob: Job? = null
+    @Volatile
+    private var notifOwnedRun = false
+    @Volatile
+    private var lastActivateDurationSec = 5
+    @Volatile
+    private var autoChargeActive = false
+    private var autoChargeFromMode = MODE_RAINBOW
+    private var autoChargeStartedService = false
     private var job: Job? = null
     private var pulseJob: Job? = null
     private var screenReceiverRegistered = false
@@ -456,7 +478,7 @@ class DashDazzService : Service() {
                         Log.d(TAG, "Screen OFF received: applying screen policy")
                         evaluateScreenPolicy()
                     }
-                    if (_stateFlow.value.isRunning && Prefs.isFlashOnLock(this@DashDazzService)) {
+                    if (Prefs.isFlashOnLock(this@DashDazzService)) {
                         flashScreenEvent(this@DashDazzService)
                     }
                 }
@@ -466,18 +488,22 @@ class DashDazzService : Service() {
                         Log.d(TAG, "Screen ON received: applying screen policy")
                         evaluateScreenPolicy()
                     }
-                    if (_stateFlow.value.isRunning && Prefs.isFlashOnUnlock(this@DashDazzService)) {
+                    if (Prefs.isFlashOnUnlock(this@DashDazzService)) {
                         flashScreenEvent(this@DashDazzService)
                     }
                 }
                 Intent.ACTION_POWER_CONNECTED -> {
-                    if (stillRunning() && shouldRunNow()) {
+                    if (Prefs.isAutoCharging(this@DashDazzService)) {
+                        enterChargingMode()
+                    } else if (stillRunning() && shouldRunNow()) {
                         Log.d(TAG, "Power connected: taking the ring back once")
                         launchAnimationLoop()
                     }
                 }
                 Intent.ACTION_POWER_DISCONNECTED -> {
-                    if (stillRunning() && shouldRunNow()) {
+                    if (Prefs.isAutoCharging(this@DashDazzService)) {
+                        exitChargingMode()
+                    } else if (stillRunning() && shouldRunNow()) {
                         Log.d(TAG, "Power disconnected: taking the ring back once")
                         launchAnimationLoop()
                     }
@@ -632,7 +658,9 @@ class DashDazzService : Service() {
                     return START_STICKY
                 }
 
-                if (!wasRunning || modeChanged || (newMode == MODE_DUAL && dualStyleChanged) || job?.isActive != true) {
+                if (autoChargeActive && newMode == MODE_CHARGING) {
+                    launchAnimationLoopBypassScreenCheck()
+                } else if (!wasRunning || modeChanged || (newMode == MODE_DUAL && dualStyleChanged) || job?.isActive != true) {
                     launchAnimationLoop()
                 } else {
                     evaluateScreenPolicy()
@@ -765,6 +793,7 @@ class DashDazzService : Service() {
             MODE_BREATHE -> runBreatheLoop()
             MODE_SOLID -> runSolidLoop()
             MODE_DUAL -> runDualLoop()
+            MODE_CHARGING -> runChargingLoop()
             else -> runRainbowLoop()
         }
     }
@@ -772,6 +801,7 @@ class DashDazzService : Service() {
     private suspend fun CoroutineScope.startAudioEngineIfNeeded() {
         if (_stateFlow.value.audioReactive) {
             AudioReactiveEngine.loadFromPrefs(this@DashDazzService)
+            AudioReactiveEngine.disownPreview()
             AudioReactiveEngine.restart()
         } else {
             AudioReactiveEngine.stop()
@@ -1042,8 +1072,29 @@ class DashDazzService : Service() {
         }
     }
 
-    private fun hsv(hue: Float, saturation: Float, value: Float): Int {
-        val h = ((hue % 360f) + 360f) % 360f
+    private suspend fun CoroutineScope.runChargingLoop() {
+        val bm = getSystemService(BatteryManager::class.java)
+        var lastColor: Int? = null
+        var phase = 0f
+        while (isActive) {
+            ensureActive()
+            val state = _stateFlow.value
+            val userBright = state.brightness.coerceIn(0.05f, 1f)
+            val level = (bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1)
+                .coerceIn(0, 100)
+            val hue = level * 1.2f
+            phase = (phase + 1f) % 360f
+            val breathe = 0.55f + 0.45f * sin(Math.toRadians(phase.toDouble())).toFloat()
+            val targetColor = hsv(hue, 1f, (breathe * userBright).coerceIn(0.05f, 1f))
+            if (targetColor != lastColor) {
+                lastColor = targetColor
+                LightsBridge.setCameraRing(targetColor)
+            }
+            delay(govDelay(state.speedMs.coerceIn(10L, 500L)))
+        }
+    }
+
+    private fun hsv(hue: Float, saturation: Float, value: Float): Int {        val h = ((hue % 360f) + 360f) % 360f
         val argb = Color.HSVToColor(floatArrayOf(h, saturation.coerceIn(0f, 1f), value.coerceIn(0.05f, 1f)))
         return if (argb == -1) 0xFFFEFEFE.toInt() else argb
     }
@@ -1312,17 +1363,23 @@ class DashDazzService : Service() {
                         if (gen != pulseGen) return@withLock
                         LightsBridge.resetScene()
                         when {
-                            wasRunningBeforePulse -> launchAnimationLoop()
+                            wasRunningBeforePulse -> {
+                                launchAnimationLoop()
+                                if (notifOwnedRun) {
+                                    armActivateExpiry(lastActivateDurationSec, isNotifOnlyMode)
+                                }
+                            }
                             wasPausedByPolicy || isNotifOnlyMode -> {
 
                                 LightsBridge.turnOff()
+                                notifOwnedRun = false
                                 _stateFlow.update { it.copy(isRunning = true, isScreenPaused = true) }
                                 updateNotificationText()
                                 notifyTileState(this@DashDazzService)
                             }
                             else -> {
                                 LightsBridge.turnOff()
-
+                                notifOwnedRun = false
                                 stopLight()
                             }
                         }
@@ -1334,12 +1391,11 @@ class DashDazzService : Service() {
 
     private fun handleActivateForNotification(durationSec: Int) {
         val safeDuration = durationSec.coerceIn(1, 60)
-        val gen = ++activateGen
-
         pulseGen++
         pulseJob?.cancel()
 
-        if (stillRunning()) {
+        if (stillRunning() && !notifOwnedRun) {
+            val gen = ++activateGen
             activateJob?.cancel()
             activateJob = scope.launch {
                 try {
@@ -1407,6 +1463,13 @@ class DashDazzService : Service() {
         notifyTileState(this)
         updateNotificationText()
 
+        notifOwnedRun = true
+        lastActivateDurationSec = safeDuration
+        armActivateExpiry(safeDuration, isNotifOnlyMode)
+    }
+
+    private fun armActivateExpiry(safeDuration: Int, isNotifOnlyMode: Boolean) {
+        val gen = ++activateGen
         activateJob?.cancel()
         activateJob = scope.launch {
             try {
@@ -1417,6 +1480,7 @@ class DashDazzService : Service() {
                     animationMutex.withLock {
                         if (gen != activateGen) return@withLock
                         Log.d(TAG, "Notification activate duration expired, stopping")
+                        notifOwnedRun = false
                         if (isNotifOnlyMode) {
 
                             job?.cancelAndJoin()
@@ -1434,12 +1498,48 @@ class DashDazzService : Service() {
         }
     }
 
+    private fun enterChargingMode() {
+        val s = _stateFlow.value
+        autoChargeFromMode = s.mode
+        autoChargeStartedService = !s.isRunning
+        if (s.isRunning) {
+            updateSettings(this, mode = MODE_CHARGING)
+            launchAnimationLoopBypassScreenCheck()
+        } else {
+            autoChargeActive = true
+            start(this, mode = MODE_CHARGING)
+            return
+        }
+        autoChargeActive = true
+    }
+
+    private fun exitChargingMode() {
+        if (!autoChargeActive) {
+            if (stillRunning() && shouldRunNow()) {
+                Log.d(TAG, "Power disconnected: taking the ring back once")
+                launchAnimationLoop()
+            }
+            return
+        }
+        autoChargeActive = false
+        if (autoChargeStartedService && _stateFlow.value.mode == MODE_CHARGING) {
+            autoChargeStartedService = false
+            stopLight()
+        } else if (_stateFlow.value.mode == MODE_CHARGING) {
+            autoChargeStartedService = false
+            updateSettings(this, mode = autoChargeFromMode)
+        } else {
+            autoChargeStartedService = false
+        }
+    }
+
     private fun stillRunning(): Boolean =
         _stateFlow.value.isRunning && !_stateFlow.value.isScreenPaused
 
     private fun stopLight() {
         pulseGen++
         activateGen++
+        notifOwnedRun = false
         pulseJob?.cancel()
         activateJob?.cancel()
         LightsBridge.stopSpin()
@@ -1448,14 +1548,12 @@ class DashDazzService : Service() {
                 job?.cancelAndJoin()
                 job = null
                 AudioReactiveEngine.stop()
+                withContext(NonCancellable) {
+                    LightsBridge.turnOff()
+                }
             }
         }
 
-        ioScope.launch {
-            withContext(NonCancellable) {
-                LightsBridge.turnOff()
-            }
-        }
         _stateFlow.update { it.copy(isRunning = false, isScreenPaused = false) }
         updateNotificationText()
         notifyTileState(this)
@@ -1547,6 +1645,7 @@ class DashDazzService : Service() {
             MODE_BREATHE -> getString(R.string.mode_breathe)
             MODE_SOLID -> getString(R.string.mode_solid)
             MODE_DUAL -> getString(R.string.mode_dual)
+            MODE_CHARGING -> getString(R.string.mode_charging)
             else -> getString(R.string.mode_rainbow)
         }
 

@@ -38,6 +38,9 @@ object Prefs {
     private const val KEY_AUDIO_BAND_MODE = "key_audio_band_mode"
     private const val KEY_AUDIO_DEGREES_PER_BEAT = "key_audio_degrees_per_beat"
     private const val KEY_AUDIO_AUTO_SENSITIVITY = "key_audio_auto_sensitivity"
+    private const val KEY_AUDIO_APPS = "key_audio_apps"
+    private const val KEY_AUDIO_APPS_FILTER = "key_audio_apps_filter"
+    private const val KEY_AUTO_CHARGING = "key_auto_charging"
 
     data class AudioConfig(
         val source: Int,
@@ -288,6 +291,36 @@ object Prefs {
 
     fun setNotifAppsFilter(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_NOTIF_APPS_FILTER, enabled).apply()
+    }
+
+    fun getAudioApps(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_AUDIO_APPS, emptySet())?.toSet() ?: emptySet()
+
+    fun setAudioApps(context: Context, pkgs: Set<String>) {
+        prefs(context).edit().putStringSet(KEY_AUDIO_APPS, pkgs.toSet()).apply()
+    }
+
+    fun isAudioAppsFilter(context: Context): Boolean {
+        val p = prefs(context)
+        if (!p.contains(KEY_AUDIO_APPS_FILTER)) {
+            if (!p.getStringSet(KEY_AUDIO_APPS, emptySet()).isNullOrEmpty()) {
+                p.edit().putBoolean(KEY_AUDIO_APPS_FILTER, true).apply()
+                return true
+            }
+            return false
+        }
+        return p.getBoolean(KEY_AUDIO_APPS_FILTER, false)
+    }
+
+    fun setAudioAppsFilter(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUDIO_APPS_FILTER, enabled).apply()
+    }
+
+    fun isAutoCharging(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_CHARGING, false)
+
+    fun setAutoCharging(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_CHARGING, enabled).apply()
     }
 
     fun isFlashOnLock(context: Context): Boolean =

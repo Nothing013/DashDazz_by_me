@@ -16,6 +16,8 @@
     <string name="flash_lock_desc">Pulse the ring when the screen turns off</string>
     <string name="flash_unlock_title">Flash on unlock</string>
     <string name="flash_unlock_desc">Pulse the ring when the screen turns on</string>
+    <string name="auto_charging_title">Auto charging light</string>
+    <string name="auto_charging_desc">Switch to the Charging light while plugged in</string>
     <string name="notif_app_custom">Custom</string>
     <string name="notif_app_default">Default</string>
     <string name="notif_app_reset">Reset</string>
@@ -38,6 +40,7 @@
     <string name="mode_breathe">Breathe</string>
     <string name="mode_solid">Solid</string>
     <string name="mode_dual">Dual Ring</string>
+    <string name="mode_charging">Charging</string>
 
     <string name="title_dual_effects">Dual-Ring Effects</string>
     <string name="dual_hardware_split">Hardware Split</string>
@@ -112,6 +115,11 @@
     <string name="audio_reactive_permission_denied">Microphone permission is required for Audio Reactive mode</string>
     <string name="audio_reactive_permission_rationale">DashDazz needs audio permission to visualize playback. No audio is recorded or uploaded.</string>
     <string name="audio_reactive_toggle">React to audio</string>
+    <string name="audio_apps_title">Audio apps</string>
+    <string name="audio_apps_all">All apps</string>
+    <string name="audio_apps_all_desc">React to music from any app</string>
+    <string name="audio_apps_count">%1$d apps</string>
+    <string name="audio_apps_mic_note">App selection applies to Global Media Mix only. Microphone captures the room.</string>
     <string name="audio_reactive_on_desc">The selected mode is driven by the music</string>
     <string name="audio_reactive_off_desc">The selected mode runs on its own animation</string>
     <string name="notif_audio_suffix">+ Audio</string>
