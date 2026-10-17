@@ -75,7 +75,7 @@ object Palettes {
         )
     )
 
-    fun sanitize(argb: Int): Int =
+    private fun sanitize(argb: Int): Int =
         if (argb == -1) 0xFFFEFEFE.toInt() else argb
 
     fun interpolate(

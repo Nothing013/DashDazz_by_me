@@ -129,34 +129,21 @@ object Prefs {
         return prefs(context).getInt(KEY_COLOR, default)
     }
 
-    fun setColor(context: Context, color: Int) {
-        prefs(context).edit().putInt(KEY_COLOR, color).apply()
-    }
 
     fun getSpeedMs(context: Context, default: Long = 25L): Long {
         return prefs(context).getLong(KEY_SPEED, default)
     }
 
-    fun setSpeedMs(context: Context, speed: Long) {
-        prefs(context).edit().putLong(KEY_SPEED, speed.coerceIn(10L, 500L)).apply()
-    }
 
     fun getBrightness(context: Context, default: Float = 1.0f): Float {
         return prefs(context).getFloat(KEY_BRIGHTNESS, default)
     }
 
-    fun setBrightness(context: Context, brightness: Float) {
-        val v = if (brightness.isNaN()) 1f else brightness.coerceIn(0.05f, 1f)
-        prefs(context).edit().putFloat(KEY_BRIGHTNESS, v).apply()
-    }
 
     fun isPauseOnScreenOff(context: Context, default: Boolean = true): Boolean {
         return prefs(context).getBoolean(KEY_PAUSE_ON_SCREEN_OFF, default)
     }
 
-    fun setPauseOnScreenOff(context: Context, pause: Boolean) {
-        prefs(context).edit().putBoolean(KEY_PAUSE_ON_SCREEN_OFF, pause).apply()
-    }
 
     fun getScreenMode(context: Context): Int {
         val p = prefs(context)
@@ -164,9 +151,6 @@ object Prefs {
         return if (isPauseOnScreenOff(context)) DashDazzService.SCREEN_ON_ONLY else DashDazzService.SCREEN_ALWAYS
     }
 
-    fun setScreenMode(context: Context, mode: Int) {
-        prefs(context).edit().putInt(KEY_SCREEN_MODE, mode).apply()
-    }
 
     fun isSetupDone(context: Context): Boolean = prefs(context).getBoolean(KEY_SETUP_DONE, false)
 
@@ -178,25 +162,16 @@ object Prefs {
         return prefs(context).getInt(KEY_DUO_OFFSET, default)
     }
 
-    fun setDuoHueOffset(context: Context, degrees: Int) {
-        prefs(context).edit().putInt(KEY_DUO_OFFSET, degrees.coerceIn(0, 360)).apply()
-    }
 
     fun isBlinkOnNotification(context: Context, default: Boolean = false): Boolean {
         return prefs(context).getBoolean(KEY_BLINK_ON_NOTIFICATION, default)
     }
 
-    fun setBlinkOnNotification(context: Context, blink: Boolean) {
-        prefs(context).edit().putBoolean(KEY_BLINK_ON_NOTIFICATION, blink).apply()
-    }
 
     fun getPalette(context: Context, default: Int = Palettes.SPECTRUM): Int {
         return prefs(context).getInt(KEY_PALETTE, default)
     }
 
-    fun setPalette(context: Context, palette: Int) {
-        prefs(context).edit().putInt(KEY_PALETTE, palette).apply()
-    }
 
     fun getDualStyle(context: Context, default: Int = DashDazzService.DUAL_HARDWARE_SPLIT): Int {
         return prefs(context).getInt(KEY_DUAL_STYLE, default)
@@ -210,33 +185,21 @@ object Prefs {
         return prefs(context).getInt(KEY_SPLIT_COLOR_A, default)
     }
 
-    fun setSplitColorA(context: Context, color: Int) {
-        prefs(context).edit().putInt(KEY_SPLIT_COLOR_A, color).apply()
-    }
 
     fun getSplitColorB(context: Context, default: Int = Color.BLUE): Int {
         return prefs(context).getInt(KEY_SPLIT_COLOR_B, default)
     }
 
-    fun setSplitColorB(context: Context, color: Int) {
-        prefs(context).edit().putInt(KEY_SPLIT_COLOR_B, color).apply()
-    }
 
     fun getSpinColorA(context: Context, default: Int = Color.RED): Int {
         return prefs(context).getInt(KEY_SPIN_COLOR_A, default)
     }
 
-    fun setSpinColorA(context: Context, color: Int) {
-        prefs(context).edit().putInt(KEY_SPIN_COLOR_A, color).apply()
-    }
 
     fun getSpinColorB(context: Context, default: Int = Color.BLUE): Int {
         return prefs(context).getInt(KEY_SPIN_COLOR_B, default)
     }
 
-    fun setSpinColorB(context: Context, color: Int) {
-        prefs(context).edit().putInt(KEY_SPIN_COLOR_B, color).apply()
-    }
 
     fun getDarkMode(context: Context, default: Int = 0): Int {
         return prefs(context).getInt(KEY_DARK_MODE, default)
@@ -328,19 +291,7 @@ object Prefs {
         prefs(context).edit().putLong(KEY_UPDATE_LAST_CHECK_MS, ms).apply()
     }
 
-    fun isFlashOnLock(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_FLASH_ON_LOCK, false)
 
-    fun setFlashOnLock(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_FLASH_ON_LOCK, enabled).apply()
-    }
-
-    fun isFlashOnUnlock(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_FLASH_ON_UNLOCK, false)
-
-    fun setFlashOnUnlock(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_FLASH_ON_UNLOCK, enabled).apply()
-    }
 
     fun isFlashScreen(context: Context): Boolean =
         prefs(context).getBoolean(KEY_FLASH_SCREEN, false)
@@ -434,17 +385,11 @@ object Prefs {
         }
     }
 
-    fun setNotificationMode(context: Context, mode: Int) {
-        prefs(context).edit().putInt(KEY_NOTIF_MODE, mode.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)).apply()
-    }
 
     fun getNotificationActivateDuration(context: Context, default: Int = 5): Int {
         return prefs(context).getInt(KEY_NOTIF_ACTIVATE_DURATION, default).coerceIn(1, 60)
     }
 
-    fun setNotificationActivateDuration(context: Context, seconds: Int) {
-        prefs(context).edit().putInt(KEY_NOTIF_ACTIVATE_DURATION, seconds.coerceIn(1, 60)).apply()
-    }
 
     fun isAudioReactive(context: Context, default: Boolean = false): Boolean =
         prefs(context).getBoolean(KEY_AUDIO_REACTIVE, default)
@@ -467,9 +412,6 @@ object Prefs {
         return DashDazzService.MODE_RAINBOW
     }
 
-    fun markAudioModifierMigrated(context: Context) {
-        prefs(context).edit().putBoolean(KEY_AUDIO_MODIFIER_MIGRATED, true).apply()
-    }
 
     fun saveAll(context: Context, s: DashDazzState) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()

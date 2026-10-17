@@ -166,21 +166,6 @@ class DashDazzService : Service() {
         val isRunning: Boolean
             get() = _stateFlow.value.isRunning
 
-        val currentMode: Int
-            get() = _stateFlow.value.mode
-
-        val currentColor: Int
-            get() = _stateFlow.value.color
-
-        val currentSpeedMs: Long
-            get() = _stateFlow.value.speedMs
-
-        val currentBrightness: Float
-            get() = _stateFlow.value.brightness
-
-        val currentDuoHueOffset: Int
-            get() = _stateFlow.value.duoHueOffset
-
         fun start(
             context: Context,
             mode: Int? = null,
@@ -431,7 +416,7 @@ class DashDazzService : Service() {
             }
         }
 
-        fun flashScreenEvent(context: Context) {
+        private fun flashScreenEvent(context: Context) {
             val intent = Intent(context, DashDazzService::class.java).apply {
                 action = ACTION_PULSE
                 putExtra(EXTRA_COLOR, Prefs.getColor(context))
@@ -449,7 +434,7 @@ class DashDazzService : Service() {
             }
         }
 
-        fun notifyTileState(context: Context) {
+        private fun notifyTileState(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 try {
                     TileService.requestListeningState(
@@ -508,7 +493,6 @@ class DashDazzService : Service() {
     private var pulseJob: Job? = null
     @Volatile
     private var ecoOverride = false
-    private var screenReceiverRegistered = false
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -578,6 +562,7 @@ class DashDazzService : Service() {
             ACTION_PULSE -> {
                 val force = intent?.getBooleanExtra(EXTRA_FORCE, false) ?: false
                 if (!force && Prefs.getNotificationMode(this) == Prefs.NOTIF_MODE_OFF) {
+                    stopIfNotForeground()
                     return START_NOT_STICKY
                 }
                 val pulseColor = intent.getIntExtra(EXTRA_COLOR, _stateFlow.value.color)
@@ -587,6 +572,7 @@ class DashDazzService : Service() {
             }
             ACTION_ACTIVATE -> {
                 if (Prefs.getNotificationMode(this) == Prefs.NOTIF_MODE_OFF) {
+                    stopIfNotForeground()
                     return START_NOT_STICKY
                 }
                 val durationSec = intent.getIntExtra(
@@ -684,6 +670,12 @@ class DashDazzService : Service() {
         return START_STICKY
     }
 
+    private fun stopIfNotForeground() {
+        if (!_stateFlow.value.isRunning) {
+            stopSelf()
+        }
+    }
+
     private fun recoverStickyRestart() {
         if (!_stateFlow.value.isRunning) return
         Log.d(TAG, "Sticky restart with no intent: restoring foreground and animation")
@@ -751,11 +743,6 @@ class DashDazzService : Service() {
         notifyTileState(this)
     }
 
-    private fun resumeAnimationForScreenOn() {
-        launchAnimationLoop()
-        updateNotificationText()
-    }
-
     internal fun shouldRunNow(): Boolean = when (_stateFlow.value.screenMode) {
         SCREEN_ON_ONLY -> isScreenInteractive()
         SCREEN_OFF_ONLY -> !isScreenInteractive()
@@ -810,7 +797,6 @@ class DashDazzService : Service() {
 
     private suspend fun CoroutineScope.dispatchAnimationLoop() {
 
-        LightsBridge.stopSpin()
         val mode = _stateFlow.value.mode
         if (mode != MODE_DUAL) {
 
@@ -1393,9 +1379,11 @@ class DashDazzService : Service() {
                         LightsBridge.resetScene()
                         when {
                             wasRunningBeforePulse -> {
-                                launchAnimationLoop()
                                 if (notifOwnedRun) {
+                                    launchAnimationLoopBypassScreenCheck()
                                     armActivateExpiry(lastActivateDurationSec, isNotifOnlyMode)
+                                } else {
+                                    launchAnimationLoop()
                                 }
                             }
                             wasPausedByPolicy || isNotifOnlyMode -> {
@@ -1508,19 +1496,10 @@ class DashDazzService : Service() {
                 withContext(NonCancellable) {
                     animationMutex.withLock {
                         if (gen != activateGen) return@withLock
+                        if (isNotifOnlyMode) Log.d(TAG, "Notif Only activation window ended")
                         Log.d(TAG, "Notification activate duration expired, stopping")
                         notifOwnedRun = false
-                        if (isNotifOnlyMode) {
-
-                            job?.cancelAndJoin()
-                            job = null
-                            LightsBridge.turnOff()
-                            _stateFlow.update { it.copy(isScreenPaused = true) }
-                            updateNotificationText()
-                            notifyTileState(this@DashDazzService)
-                        } else {
-                            stopLight()
-                        }
+                        stopLight()
                     }
                 }
             }
@@ -1571,7 +1550,6 @@ class DashDazzService : Service() {
         notifOwnedRun = false
         pulseJob?.cancel()
         activateJob?.cancel()
-        LightsBridge.stopSpin()
         scope.launch {
             animationMutex.withLock {
                 job?.cancelAndJoin()
@@ -1614,7 +1592,6 @@ class DashDazzService : Service() {
 
         pulseJob?.cancel()
         activateJob?.cancel()
-        LightsBridge.stopSpin()
         val loop = job
         job = null
         _stateFlow.update { it.copy(isRunning = false, isScreenPaused = false) }

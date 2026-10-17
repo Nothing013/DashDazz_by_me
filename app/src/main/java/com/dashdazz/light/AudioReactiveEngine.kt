@@ -472,7 +472,6 @@ object AudioReactiveEngine {
     private const val BEAT_VISIBLE_FLOOR = 0.5f
     private const val SIGNAL_FLOOR = 0.02f
     private const val SILENCE_TRIGGER_MS = 2500L
-    private const val BEAT_WINDOW_MS = 1000L
     private const val MIN_BEAT_GAP_MS = 150L
     private const val MAX_BEAT_GAP_MS = 430L
     private const val DIAGNOSTICS_INTERVAL_MS = 50L
@@ -487,9 +486,7 @@ object AudioReactiveEngine {
     private const val MIC_SAMPLE_RATE = 22050
     private const val MIC_FRAME = 256
 
-    private const val AUTO_IDLE_MS = 4000L
 
-    private const val AUTO_HIT_WINDOW = 6
 
     private const val AUTO_SELECT_INTERVAL_MS = 1500L
 
@@ -497,8 +494,6 @@ object AudioReactiveEngine {
 
     private const val AUTO_MIN_FIRE_GAP_MS = 200L
 
-    private const val AUTO_SCORE_WINDOW_MS = 4000L
-    private const val AUTO_HITS_PER_WINDOW = 6
 
     private const val AUTO_CONTROL_INTERVAL_MS = 1000L
     private const val AUTO_RATE_WINDOW_MS = 2000L
@@ -851,7 +846,8 @@ object AudioReactiveEngine {
         if (autoSensitivity) {
             appContext?.let { Prefs.setAudioBeatThreshold(it, beatThreshold) }
         }
-        if (clearError && wasRunning) captureError = null
+        if (clearError) captureError = null
+        captureErrorRetryable = true
         synchronized(pumpLock) { resetDsp() }
         _diagnostics.value = AudioDiagnostics(captureError = captureError)
     }
@@ -915,6 +911,7 @@ object AudioReactiveEngine {
             visualizer = viz
             running = true
             captureError = null
+            captureErrorRetryable = true
             Log.d(TAG, "Visualizer active (captureSize=$safeSize, rate=${Visualizer.getMaxCaptureRate()}mHz)")
             true
         } catch (e: Throwable) {

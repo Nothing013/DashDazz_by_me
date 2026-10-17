@@ -89,7 +89,7 @@ object UpdateChecker {
         return parts.last().trim().toIntOrNull()
     }
 
-    fun downloadTarget(context: Context, tag: String): File {
+    private fun downloadTarget(context: Context, tag: String): File {
         val dir = File(context.cacheDir, "updates")
         if (!dir.exists()) dir.mkdirs()
         clearOldDownloads(dir)

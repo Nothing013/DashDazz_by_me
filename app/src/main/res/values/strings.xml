@@ -28,8 +28,6 @@
     <string name="shizuku_connected">Shizuku connected</string>
     <string name="btn_grant_permission">Grant Shizuku Permission</string>
 
-    <string name="btn_start">Turn ON</string>
-    <string name="btn_stop">Turn OFF</string>
     <string name="status_service_running">Light is ACTIVE</string>
     <string name="status_service_stopped">Light is OFF</string>
 
@@ -67,14 +65,6 @@
     <string name="label_hue">Hue: %1$d°</string>
 
     <string name="title_presets">Color Presets</string>
-    <string name="color_red">Red</string>
-    <string name="color_orange">Orange</string>
-    <string name="color_yellow">Yellow</string>
-    <string name="color_green">Green</string>
-    <string name="color_cyan">Cyan</string>
-    <string name="color_blue">Blue</string>
-    <string name="color_purple">Purple</string>
-    <string name="color_white">White</string>
     <string name="title_saved_presets">Saved Presets</string>
     <string name="btn_save_preset">+ Save Current</string>
     <string name="preset_saved">Preset saved!</string>
@@ -83,10 +73,6 @@
     <string name="hint_no_saved_presets">Tap \"+ Save Current\" to keep your favorite colors</string>
 
     <string name="title_features">Smart Automation</string>
-    <string name="feature_pause_screen_off">Pause when screen is off</string>
-    <string name="feature_pause_screen_off_desc">Turn off LED while display is locked to prevent battery drain</string>
-    <string name="feature_blink_notification">Blink on notification</string>
-    <string name="feature_blink_notification_desc">Pulse the camera ring when new alerts arrive</string>
     <string name="btn_grant_notif_access">Grant Notification Access</string>
 
     <string name="title_notification_mode">Notification Behavior</string>
@@ -138,15 +124,10 @@
     <string name="audio_idle">···</string>
     <string name="audio_bpm">%1$d BPM</string>
     <string name="audio_bps">%1$d bps</string>
-    <string name="audio_beat_label">Beat:</string>
     <string name="audio_spectrum_label">Spectrum:</string>
-    <string name="audio_dual_rainbow">Dual Rainbow:</string>
-    <string name="audio_spot_a">Spot A</string>
-    <string name="audio_spot_b">Spot B</string>
     <string name="audio_meter_low">LOW</string>
     <string name="audio_meter_mid">MID</string>
     <string name="audio_meter_high">HIGH</string>
-    <string name="audio_phase_shift">+ 90° ⟷</string>
     <string name="audio_band_selected">Selected Band: %1$d Hz – %2$d Hz</string>
     <string name="audio_min_freq">Min Frequency: %1$d Hz</string>
     <string name="audio_max_freq">Max Frequency: %1$d Hz</string>
@@ -178,13 +159,6 @@
     <string name="tab_lighting">Lighting</string>
     <string name="tab_settings">Settings</string>
 
-    <string name="title_effects">Effects</string>
-    <string name="effect_notifications">Notifications</string>
-    <string name="effect_rhythmic">Rhythmic light</string>
-    <string name="effect_style">Lighting style</string>
-    <string name="preview_desc">Live preview of the ring light</string>
-    <string name="notif_screen_mode_hint">Notification lighting is configured for “Notif Only” screen behavior. Switch below to enable it.</string>
-    <string name="notif_switch_to_notif_only">Use Notif Only behavior</string>
 
     <string name="title_dark_mode">Theme</string>
     <string name="theme_system">System</string>
@@ -195,15 +169,9 @@
     <string name="title_about">About DashDazz</string>
     <string name="update_check_title">Check for updates</string>
     <string name="update_check_desc">Look for a newer DashDazz release</string>
-    <string name="update_checking">Checking for updates</string>
     <string name="update_up_to_date">You are on the latest version</string>
-    <string name="update_available">%1$s is available</string>
-    <string name="update_downloading">Downloading %1$d%%</string>
-    <string name="update_downloading_desc">Downloading update</string>
     <string name="update_install">Download and install</string>
     <string name="update_failed">Update check failed, tap to retry</string>
-    <string name="update_need_permission">Allow installs from this app to finish updating</string>
-    <string name="update_download_failed">Download failed, tap to retry</string>
 
     <string name="about_desc">Hardware Camera Ring Controller for POCO X8 Pro Max (Dash) by @ttertekann</string>
     <string name="about_version">v%1$s · build %2$d</string>

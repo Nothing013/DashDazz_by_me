@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class DashDazzNotificationListener : NotificationListenerService() {
@@ -33,6 +34,9 @@ class DashDazzNotificationListener : NotificationListenerService() {
             handleMediaSessionChange(controllers)
         }
     }
+
+    @Volatile
+    private var sessionListenerRegistered = false
 
     private fun playingPackagesOf(controllers: List<MediaController>?): Set<String> =
         controllers?.mapNotNull { ctrl ->
@@ -55,7 +59,11 @@ class DashDazzNotificationListener : NotificationListenerService() {
     private fun publishPlayingPackages(pkgs: Set<String>) {
         if (pkgs == playingPackages) return
         playingPackages = pkgs
-        listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+        if (listenerScope.isActive) {
+            listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+        } else {
+            AudioReactiveEngine.refreshAudioGate()
+        }
     }
 
     private fun handleMediaSessionChange(controllers: List<MediaController>?) {
@@ -67,8 +75,10 @@ class DashDazzNotificationListener : NotificationListenerService() {
             Log.d(TAG, "Media playback started: scheduling scene reclaims")
             mediaReclaimJob?.cancel()
             mediaReclaimJob = listenerScope.launch {
-                for (waitMs in RECLAIM_STEPS_MS) {
-                    delay(waitMs)
+                var elapsed = 0L
+                for (offsetMs in RECLAIM_OFFSETS_MS) {
+                    delay(offsetMs - elapsed)
+                    elapsed = offsetMs
                     val stillPlayingPkgs = queryPlayingPackages()
                     if (stillPlayingPkgs == null) {
                         Log.d(TAG, "Reclaim poll failed, keeping previous playback state")
@@ -99,7 +109,10 @@ class DashDazzNotificationListener : NotificationListenerService() {
         try {
             val msm = getSystemService(MediaSessionManager::class.java)
             val component = ComponentName(this, DashDazzNotificationListener::class.java)
-            msm?.addOnActiveSessionsChangedListener(mediaSessionListener, component)
+            if (!sessionListenerRegistered) {
+                msm?.addOnActiveSessionsChangedListener(mediaSessionListener, component)
+                sessionListenerRegistered = msm != null
+            }
 
             handleMediaSessionChange(msm?.getActiveSessions(component))
         } catch (e: SecurityException) {
@@ -136,29 +149,14 @@ class DashDazzNotificationListener : NotificationListenerService() {
         val allowedApps = Prefs.getNotifApps(this)
         if (Prefs.isNotifAppsFilter(this) && sbn.packageName !in allowedApps) return
 
-        val notifMode = Prefs.getNotificationMode(this)
-        when (notifMode) {
-            Prefs.NOTIF_MODE_ACTIVATE -> {
-
-                val durationSec = Prefs.getNotificationActivateDuration(this)
-                val cfg = Prefs.getAppNotifConfig(this, sbn.packageName)
-                Log.d(TAG, "Notification received from ${sbn.packageName}, activating lights for ${durationSec}s")
-                if (cfg.color != null) {
-                    val holdMs = ((cfg.durationSec ?: durationSec).coerceIn(1, 60)) * 1000L
-                    DashDazzService.pulseNotification(this, cfg.color, holdMs)
-                } else {
-                    DashDazzService.activateForNotification(this, durationSec)
-                }
-            }
-            else -> {
-
-                listenerScope.launch {
-                    delay(3500)
-                    if (DashDazzService.isRunning && !DashDazzService.stateFlow.value.isScreenPaused) {
-                        LightsBridge.resetScene()
-                    }
-                }
-            }
+        val durationSec = Prefs.getNotificationActivateDuration(this)
+        val cfg = Prefs.getAppNotifConfig(this, sbn.packageName)
+        Log.d(TAG, "Notification received from ${sbn.packageName}, activating lights for ${durationSec}s")
+        if (cfg.color != null) {
+            val holdMs = ((cfg.durationSec ?: durationSec).coerceIn(1, 60)) * 1000L
+            DashDazzService.pulseNotification(this, cfg.color, holdMs)
+        } else {
+            DashDazzService.activateForNotification(this, durationSec)
         }
     }
 
@@ -192,7 +190,7 @@ class DashDazzNotificationListener : NotificationListenerService() {
         mediaReclaimJob?.cancel()
         mediaReclaimJob = null
         mediaWasPlaying = false
-        playingPackages = emptySet()
+        publishPlayingPackages(emptySet())
         listenerScope.cancel()
         super.onDestroy()
     }
@@ -200,7 +198,7 @@ class DashDazzNotificationListener : NotificationListenerService() {
     companion object {
         private const val TAG = "DashDazzNotif"
 
-        private val RECLAIM_STEPS_MS = listOf(500L, 1500L, 3000L, 5000L, 8000L)
+        private val RECLAIM_OFFSETS_MS = listOf(500L, 1500L, 3000L, 5000L, 8000L)
 
         @Volatile
         var playingPackages: Set<String> = emptySet()

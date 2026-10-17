@@ -6,6 +6,6 @@ class DashDazzApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        registerLifecycleReceivers(this)
+        LifecycleReceivers.register(this)
     }
 }

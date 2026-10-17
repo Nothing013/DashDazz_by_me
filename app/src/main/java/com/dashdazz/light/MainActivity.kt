@@ -1,7 +1,6 @@
 package com.dashdazz.light
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -44,7 +43,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Path
@@ -258,21 +256,21 @@ private fun openStripLightSettings(context: Context) {
     }
 }
 
-@Composable
 private fun updateStatusLabel(
     status: UpdateChecker.UpdateStatus,
     progress: Int,
     desc: String,
-    install: String
+    install: String,
+    upToDate: String,
+    failed: String
 ): String = when {
-    progress in 0..99 -> "$progress%"
-    progress == 100 -> "100%"
+    progress in 0..100 -> "$progress%"
     else -> when (status) {
         is UpdateChecker.UpdateStatus.Idle -> desc
         is UpdateChecker.UpdateStatus.Checking -> desc
-        is UpdateChecker.UpdateStatus.UpToDate -> "Up to date"
+        is UpdateChecker.UpdateStatus.UpToDate -> upToDate
         is UpdateChecker.UpdateStatus.Available -> install
-        is UpdateChecker.UpdateStatus.Failed -> "Check failed, tap to retry"
+        is UpdateChecker.UpdateStatus.Failed -> failed
     }
 }
 
@@ -284,14 +282,6 @@ private fun LiveRingPreview(
     modifier: Modifier = Modifier
 ) {
     val scratch = remember { FloatArray(3) }
-    fun dimmed(argb: Int): Color {
-        AndroidColor.colorToHSV(argb, scratch)
-        return Color(
-            AndroidColor.HSVToColor(
-                floatArrayOf(scratch[0], scratch[1], brightness.coerceIn(0.05f, 1f))
-            )
-        )
-    }
 
     val live = state.isRunning && !state.isScreenPaused
     var tick by remember { mutableIntStateOf(0) }
@@ -2432,7 +2422,9 @@ fun DashDazzScreen(
                                     updateStatus,
                                     updateProgress,
                                     stringResource(R.string.update_check_desc),
-                                    stringResource(R.string.update_install)
+                                    stringResource(R.string.update_install),
+                                    stringResource(R.string.update_up_to_date),
+                                    stringResource(R.string.update_failed)
                                 ),
                                 onClick = { onUpdateClick() }
                             )

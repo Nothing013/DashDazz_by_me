@@ -8,8 +8,6 @@ import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 object LightsBridge {
     private const val TAG = "DashDazz"
@@ -183,10 +181,6 @@ object LightsBridge {
         return checkRootFresh()
     }
 
-    fun invalidateRootCache() {
-        isRootCached = null
-        rootCacheAtMs = 0L
-    }
 
     fun runRoot(cmd: String): Boolean {
         val result = runProcess("su", "-c", cmd)
@@ -263,13 +257,7 @@ object LightsBridge {
         fastWriter = null
     }
 
-    fun destroyFastShell() {
-        synchronized(fastLock) { destroyFastShellLocked() }
-    }
 
-    fun hardwareReset(): Boolean = synchronized(hwLock) {
-        runRoot("echo 1 > \"$SYS_HWEN\" && echo 0 > \"$SYS_EFFECT\"")
-    }
 
     fun hardwareOff(): Boolean = synchronized(hwLock) {
         trackPushed(0xFF000000.toInt())
@@ -349,24 +337,6 @@ object LightsBridge {
         runRoot(cmd)
     }
 
-    fun setHardwareSolid(r: Int, g: Int, b: Int): Boolean = synchronized(hwLock) {
-        val cmd = "SYS=\"$SYS_REG\"; " +
-                "echo '0x00 0x11' > \"\$SYS\" && " +
-                "echo '0x6e 0xff' > \"\$SYS\" && " +
-                "echo '0x7a 0x00' > \"\$SYS\" && " +
-                "echo '0xa0 0x00' > \"\$SYS\" && " +
-                "echo '0xa1 0x00' > \"\$SYS\" && " +
-                "echo '0xa2 0x44' > \"\$SYS\" && " +
-                "echo '0xa3 0x44' > \"\$SYS\" && " +
-                "echo '0xa6 0x66' > \"\$SYS\" && " +
-                "echo '0xa7 0xcc' > \"\$SYS\" && " +
-                "echo '0xa8 ${hex(r)}' > \"\$SYS\" && " +
-                "echo '0xa9 ${hex(g)}' > \"\$SYS\" && " +
-                "echo '0xaa ${hex(b)}' > \"\$SYS\" && " +
-                "echo '0xab 0xff' > \"\$SYS\" && " +
-                "echo '0xac 0x00' > \"\$SYS\""
-        runRoot(cmd)
-    }
 
     fun setDualSpotColors(colorA: Int, colorB: Int, full: Boolean = true): Boolean = synchronized(hwLock) {
         val a = sanitized(colorA)
@@ -436,56 +406,6 @@ object LightsBridge {
         return runRootFast(cmd)
     }
 
-    private val spinThread = AtomicReference<Thread?>(null)
-    private val spinStop = AtomicBoolean(false)
-
-    fun stopSpin() {
-        spinStop.set(true)
-        try {
-            spinThread.getAndSet(null)?.interrupt()
-        } catch (_: Throwable) {
-        }
-    }
-
-    fun startSpin(
-        colorAArgb: Int = 0xFFFF0000.toInt(),
-        colorBArgb: Int = 0xFF0000FF.toInt(),
-        delaySec: Float = 0.25f,
-        rounds: Int = 15
-    ): Boolean {
-        val delay = delaySec.coerceIn(0.05f, 2f).let { if (it.isNaN() || it.isInfinite()) 0.25f else it }
-        val total = rounds.coerceIn(1, 600)
-        stopSpin()
-        val rA = (sanitized(colorAArgb) shr 16) and 0xFF
-        val gA = (sanitized(colorAArgb) shr 8) and 0xFF
-        val bA = sanitized(colorAArgb) and 0xFF
-        val rB = (sanitized(colorBArgb) shr 16) and 0xFF
-        val gB = (sanitized(colorBArgb) shr 8) and 0xFF
-        val bB = sanitized(colorBArgb) and 0xFF
-
-        val script = "SYS=\"$SYS_REG\"; " +
-                "echo 1 > \"$SYS_HWEN\"; " +
-                "echo 2 > \"$SYS_EFFECT\"; " +
-                "echo '0x00 0x11' > \"\$SYS\"; " +
-                "echo '0x6e 0xff' > \"\$SYS\"; " +
-                "echo '0xa0 0x00' > \"\$SYS\"; " +
-                "echo '0xa1 0x00' > \"\$SYS\"; " +
-                "echo '0xa7 0xcc' > \"\$SYS\"; " +
-                "i=0; while [ \$i -lt $total ]; do " +
-                "echo '0xa8 ${hex(rA)}' > \"\$SYS\"; echo '0xa9 ${hex(gA)}' > \"\$SYS\"; echo '0xaa ${hex(bA)}' > \"\$SYS\"; echo '0xab 0x40' > \"\$SYS\"; sleep $delay; " +
-                "echo '0xa8 ${hex(rB)}' > \"\$SYS\"; echo '0xa9 ${hex(gB)}' > \"\$SYS\"; echo '0xaa ${hex(bB)}' > \"\$SYS\"; echo '0xab 0x08' > \"\$SYS\"; sleep $delay; " +
-                "i=\$((i + 1)); done; " +
-                "echo '0xab 0xff' > \"\$SYS\""
-        spinStop.set(false)
-        val t = Thread {
-            synchronized(hwLock) {
-                if (!spinStop.get()) runRoot(script)
-            }
-        }.apply { isDaemon = true }
-        spinThread.set(t)
-        t.start()
-        return true
-    }
 
     fun setCameraRing(colorArgb: Int): Boolean {
         val finalColor = sanitized(colorArgb)
@@ -507,14 +427,10 @@ object LightsBridge {
         return false
     }
 
-    fun setCameraRing(colorArgb: Int, @Suppress("UNUSED_PARAMETER") onMs: Int): Boolean {
-        return setCameraRing(colorArgb)
-    }
 
     fun turnOff(): Boolean {
         var rootOk = false
         var shizukuOk = false
-        stopSpin()
         trackPushed(0xFF000000.toInt())
         if (isRootAvailable()) {
             rootOk = hardwareOff()

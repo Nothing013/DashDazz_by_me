@@ -49,7 +49,3 @@ object LifecycleReceivers {
         }
     }
 }
-
-fun registerLifecycleReceivers(context: Context) {
-    LifecycleReceivers.register(context)
-}
