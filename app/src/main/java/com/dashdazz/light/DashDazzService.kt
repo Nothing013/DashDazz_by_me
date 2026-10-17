@@ -1194,7 +1194,146 @@ class DashDazzService : Service() {
         return hsvScratch
     }
 
-    private suspend fun CoroutineScope.runDualLoop() {
+        private fun handlePriorityTriggerChanged(
+        activeType: TriggerPriorityManager.TriggerType?,
+        payload: TriggerPriorityManager.TriggerPayload?
+    ) {
+        LedEventLogger.log(TAG, "Priority transitioned to: $activeType")
+        if (activeType == null) {
+            pauseAnimationForScreenOff()
+            return
+        }
+        when (activeType) {
+            TriggerPriorityManager.TriggerType.NOTIFICATION -> {
+                val c = payload?.color ?: _stateFlow.value.color
+                val holdMs = payload?.durationMs
+                handleNotificationPulse(c, holdMs)
+            }
+            TriggerPriorityManager.TriggerType.LOCK_UNLOCK_FLASH -> {
+                val c = payload?.color ?: Prefs.getColor(this)
+                handleNotificationPulse(c, 800L)
+            }
+            TriggerPriorityManager.TriggerType.CHARGING -> {
+                enterChargingMode()
+            }
+            TriggerPriorityManager.TriggerType.SPECIAL_EVENT -> {
+                val c = payload?.color ?: AndroidColor.RED
+                handleNotificationPulse(c, 600L)
+            }
+            TriggerPriorityManager.TriggerType.AUDIO_REACTIVE -> {
+                if (!_stateFlow.value.isRunning) startAsForeground()
+                _stateFlow.update { it.copy(audioReactive = true, isScreenPaused = false) }
+                launchAnimationLoopBypassScreenCheck()
+            }
+            TriggerPriorityManager.TriggerType.AMBIENT -> {
+                if (shouldRunNow()) {
+                    launchAnimationLoop()
+                } else {
+                    pauseAnimationForScreenOff()
+                }
+            }
+        }
+    }
+
+    private suspend fun CoroutineScope.runStrobeLoop() {
+        var step = 0
+        try {
+            while (isActive) {
+                val userColor = _stateFlow.value.color
+                val brightness = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
+                val frame = ExtendedLightingEffects.getStrobeFrame(step++, userColor, brightness)
+                LightsBridge.setCameraRing(frame.colorA)
+                delay(frame.delayMs)
+            }
+        } finally {
+            withContext(NonCancellable) {
+                LightsBridge.turnOff()
+            }
+        }
+    }
+
+    private suspend fun CoroutineScope.runCandleLoop() {
+        var tick = 0L
+        try {
+            while (isActive) {
+                val brightness = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
+                val frame = ExtendedLightingEffects.getCandleFlickerFrame(tick++, brightness)
+                LightsBridge.setCameraRing(frame.colorA)
+                delay(frame.delayMs)
+            }
+        } finally {
+            withContext(NonCancellable) {
+                LightsBridge.turnOff()
+            }
+        }
+    }
+
+    private suspend fun CoroutineScope.runNeonCyberLoop() {
+        var phase = 0f
+        try {
+            while (isActive) {
+                val brightness = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
+                val frame = ExtendedLightingEffects.getNeonCyberpunkFrame(phase, brightness)
+                if (LightsBridge.isRootAvailable()) {
+                    LightsBridge.setDualSpotColors(frame.colorA, frame.colorB, full = false)
+                } else {
+                    LightsBridge.setCameraRing(frame.colorA)
+                }
+                phase += 0.08f
+                delay(frame.delayMs)
+            }
+        } finally {
+            withContext(NonCancellable) {
+                LightsBridge.turnOff()
+            }
+        }
+    }
+
+    private suspend fun CoroutineScope.runCometLoop() {
+        var angle = 0f
+        try {
+            while (isActive) {
+                val userColor = _stateFlow.value.color
+                val brightness = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
+                val frame = ExtendedLightingEffects.getCometChaserFrame(angle, userColor, brightness)
+                if (LightsBridge.isRootAvailable()) {
+                    val isSpotA = (angle % 360f) < 180f
+                    LightsBridge.setSpinFrame(isSpotA, frame.colorA, frame.brightness)
+                } else {
+                    LightsBridge.setCameraRing(frame.colorA)
+                }
+                angle = (angle + 14f) % 360f
+                delay(frame.delayMs)
+            }
+        } finally {
+            withContext(NonCancellable) {
+                LightsBridge.turnOff()
+            }
+        }
+    }
+
+    private suspend fun CoroutineScope.runBreatheFadeLoop() {
+        var phase = 0f
+        try {
+            while (isActive) {
+                val userColor = _stateFlow.value.color
+                val brightness = _stateFlow.value.brightness.coerceIn(0.1f, 1f)
+                val progress = ((sin(phase.toDouble()).toFloat() + 1f) / 2f)
+                val hsv = FloatArray(3)
+                AndroidColor.colorToHSV(userColor, hsv)
+                hsv[2] = (progress * brightness).coerceIn(0.02f, 1f)
+                LightsBridge.setCameraRing(AndroidColor.HSVToColor(hsv))
+                phase += 0.05f
+                delay(_stateFlow.value.speedMs.coerceIn(15L, 100L))
+            }
+        } finally {
+            withContext(NonCancellable) {
+                LightsBridge.turnOff()
+            }
+        }
+    }
+
+private suspend fun CoroutineScope.runDualLoop() {
         var stepIndex = 0
         var subStep = 0
         var lastDualStyle = -1
