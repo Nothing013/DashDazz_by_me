@@ -253,6 +253,7 @@ object Prefs {
     private const val KEY_NOTIF_APPS_FILTER = "key_notif_apps_filter"
     private const val KEY_FLASH_ON_LOCK = "key_flash_on_lock"
     private const val KEY_FLASH_ON_UNLOCK = "key_flash_on_unlock"
+    private const val KEY_FLASH_SCREEN = "key_flash_screen"
     private const val KEY_NOTIF_APP_CFG = "key_notif_app_cfg"
 
     data class AppNotifConfig(val color: Int?, val durationSec: Int?)
@@ -339,6 +340,21 @@ object Prefs {
 
     fun setFlashOnUnlock(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_FLASH_ON_UNLOCK, enabled).apply()
+    }
+
+    fun isFlashScreen(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FLASH_SCREEN, false)
+
+    fun setFlashScreen(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FLASH_SCREEN, enabled).apply()
+    }
+
+    fun migrateLegacyFlashToggles(context: Context) {
+        val p = prefs(context)
+        if (p.contains(KEY_FLASH_SCREEN)) return
+        val legacy = p.getBoolean(KEY_FLASH_ON_LOCK, false) ||
+                p.getBoolean(KEY_FLASH_ON_UNLOCK, false)
+        p.edit().putBoolean(KEY_FLASH_SCREEN, legacy).apply()
     }
 
     fun getAppNotifConfig(context: Context, pkg: String): AppNotifConfig {

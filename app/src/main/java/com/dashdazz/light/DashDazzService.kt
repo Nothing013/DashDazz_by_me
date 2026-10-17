@@ -138,8 +138,7 @@ class DashDazzService : Service() {
                 Log.d(TAG, "Screen ${if (interactive) "ON" else "OFF"} received: applying screen policy")
                 svc.evaluateScreenPolicy()
             }
-            val flash = if (interactive) Prefs.isFlashOnUnlock(context) else Prefs.isFlashOnLock(context)
-            if (flash) {
+            if (Prefs.isFlashScreen(context)) {
                 Log.d(TAG, "Flash on ${if (interactive) "unlock" else "lock"} firing")
                 flashScreenEvent(context)
             }
@@ -543,6 +542,7 @@ class DashDazzService : Service() {
         ioScope.launch {
             Prefs.migrateLegacyFilters(this@DashDazzService)
             Prefs.migrateLegacyNotificationMode(this@DashDazzService)
+            Prefs.migrateLegacyFlashToggles(this@DashDazzService)
         }
 
         scope.launch {

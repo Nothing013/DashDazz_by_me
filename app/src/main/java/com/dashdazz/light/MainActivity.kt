@@ -577,8 +577,7 @@ fun DashDazzScreen(
     var brightness by remember { mutableFloatStateOf(serviceState.brightness) }
     var duoHueOffset by remember { mutableIntStateOf(serviceState.duoHueOffset) }
     var notifDuration by remember { mutableIntStateOf(serviceState.notifActivateDuration) }
-    var flashLock by remember { mutableStateOf(Prefs.isFlashOnLock(context)) }
-    var flashUnlock by remember { mutableStateOf(Prefs.isFlashOnUnlock(context)) }
+    var flashScreen by remember { mutableStateOf(Prefs.isFlashScreen(context)) }
     var autoCharging by remember { mutableStateOf(Prefs.isAutoCharging(context)) }
     val updateScope = rememberCoroutineScope()
     var updateStatus by remember { mutableStateOf<UpdateChecker.UpdateStatus>(UpdateChecker.UpdateStatus.Idle) }
@@ -2123,21 +2122,12 @@ fun DashDazzScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             SuperSwitch(
-                                title = stringResource(R.string.flash_lock_title),
-                                summary = stringResource(R.string.flash_lock_desc),
-                                checked = flashLock,
+                                title = stringResource(R.string.flash_screen_title),
+                                summary = stringResource(R.string.flash_screen_desc),
+                                checked = flashScreen,
                                 onCheckedChange = {
-                                    flashLock = it
-                                    Prefs.setFlashOnLock(context, it)
-                                }
-                            )
-                            SuperSwitch(
-                                title = stringResource(R.string.flash_unlock_title),
-                                summary = stringResource(R.string.flash_unlock_desc),
-                                checked = flashUnlock,
-                                onCheckedChange = {
-                                    flashUnlock = it
-                                    Prefs.setFlashOnUnlock(context, it)
+                                    flashScreen = it
+                                    Prefs.setFlashScreen(context, it)
                                 }
                             )
                             SuperSwitch(

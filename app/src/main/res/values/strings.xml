@@ -12,10 +12,8 @@
     <string name="survival_desc">Whitelist from power saving so the light survives. Tap to re-apply.</string>
     <string name="survival_ok">Survival protection applied</string>
     <string name="survival_failed">Could not apply protection</string>
-    <string name="flash_lock_title">Flash on lock</string>
-    <string name="flash_lock_desc">Pulse the ring when the screen turns off</string>
-    <string name="flash_unlock_title">Flash on unlock</string>
-    <string name="flash_unlock_desc">Pulse the ring when the screen turns on</string>
+    <string name="flash_screen_title">Flash on lock and unlock</string>
+    <string name="flash_screen_desc">Pulse the ring when the screen turns off and on</string>
     <string name="auto_charging_title">Auto charging light</string>
     <string name="auto_charging_desc">Switch to the Charging light while plugged in</string>
     <string name="notif_app_custom">Custom</string>
