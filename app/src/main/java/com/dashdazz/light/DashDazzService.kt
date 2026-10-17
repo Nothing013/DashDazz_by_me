@@ -126,6 +126,44 @@ class DashDazzService : Service() {
         @Volatile
         private var activeService: DashDazzService? = null
 
+        @Volatile
+        private var screenInteractiveFlag = true
+
+        internal fun isScreenInteractive(): Boolean = screenInteractiveFlag
+
+        internal fun onScreenEvent(context: Context, interactive: Boolean) {
+            screenInteractiveFlag = interactive
+            val svc = activeService
+            if (svc != null && _stateFlow.value.isRunning) {
+                Log.d(TAG, "Screen ${if (interactive) "ON" else "OFF"} received: applying screen policy")
+                svc.evaluateScreenPolicy()
+            }
+            val flash = if (interactive) Prefs.isFlashOnUnlock(context) else Prefs.isFlashOnLock(context)
+            if (flash) {
+                Log.d(TAG, "Flash on ${if (interactive) "unlock" else "lock"} firing")
+                flashScreenEvent(context)
+            }
+        }
+
+        internal fun onPowerEvent(context: Context, connected: Boolean) {
+            val svc = activeService
+            if (!Prefs.isAutoCharging(context)) {
+                if (svc != null && svc.stillRunning() && svc.shouldRunNow()) {
+                    Log.d(TAG, "Power ${if (connected) "connected" else "disconnected"}: taking the ring back once")
+                    svc.launchAnimationLoop()
+                }
+                return
+            }
+            if (svc == null) {
+                if (connected) {
+                    Log.d(TAG, "Power connected: starting charging light from idle")
+                    start(context, mode = MODE_CHARGING)
+                }
+                return
+            }
+            if (connected) svc.enterChargingMode() else svc.exitChargingMode()
+        }
+
         val isRunning: Boolean
             get() = _stateFlow.value.isRunning
 
@@ -401,7 +439,12 @@ class DashDazzService : Service() {
                 putExtra(EXTRA_FORCE, true)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
+                try {
+                    context.startForegroundService(intent)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Flash start deferred: ${e.javaClass.simpleName}")
+                    context.startService(intent)
+                }
             } else {
                 context.startService(intent)
             }
@@ -464,51 +507,13 @@ class DashDazzService : Service() {
     private var autoChargeStartedService = false
     private var job: Job? = null
     private var pulseJob: Job? = null
-    private var screenReceiverRegistered = false
-    @Volatile
-    private var screenInteractive = true
     @Volatile
     private var ecoOverride = false
+    private var screenReceiverRegistered = false
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_OFF -> {
-                    screenInteractive = false
-                    if (_stateFlow.value.isRunning) {
-                        Log.d(TAG, "Screen OFF received: applying screen policy")
-                        evaluateScreenPolicy()
-                    }
-                    if (Prefs.isFlashOnLock(this@DashDazzService)) {
-                        flashScreenEvent(this@DashDazzService)
-                    }
-                }
-                Intent.ACTION_SCREEN_ON -> {
-                    screenInteractive = true
-                    if (_stateFlow.value.isRunning) {
-                        Log.d(TAG, "Screen ON received: applying screen policy")
-                        evaluateScreenPolicy()
-                    }
-                    if (Prefs.isFlashOnUnlock(this@DashDazzService)) {
-                        flashScreenEvent(this@DashDazzService)
-                    }
-                }
-                Intent.ACTION_POWER_CONNECTED -> {
-                    if (Prefs.isAutoCharging(this@DashDazzService)) {
-                        enterChargingMode()
-                    } else if (stillRunning() && shouldRunNow()) {
-                        Log.d(TAG, "Power connected: taking the ring back once")
-                        launchAnimationLoop()
-                    }
-                }
-                Intent.ACTION_POWER_DISCONNECTED -> {
-                    if (Prefs.isAutoCharging(this@DashDazzService)) {
-                        exitChargingMode()
-                    } else if (stillRunning() && shouldRunNow()) {
-                        Log.d(TAG, "Power disconnected: taking the ring back once")
-                        launchAnimationLoop()
-                    }
-                }
                 android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
                     val saver = (context?.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode) ?: false
                     if (ecoOverride != saver) {
@@ -526,7 +531,8 @@ class DashDazzService : Service() {
     override fun onCreate() {
         super.onCreate()
         activeService = this
-        screenInteractive = (getSystemService(android.os.PowerManager::class.java)?.isInteractive) ?: true
+        screenInteractiveFlag =
+            (getSystemService(android.os.PowerManager::class.java)?.isInteractive) ?: true
         ecoOverride = (getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode) ?: false
         createNotificationChannel()
 
@@ -544,10 +550,6 @@ class DashDazzService : Service() {
         }
 
         val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_POWER_CONNECTED)
-            addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -556,7 +558,6 @@ class DashDazzService : Service() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(screenReceiver, filter)
         }
-        screenReceiverRegistered = true
 
         if (_stateFlow.value.isRunning) evaluateScreenPolicy()
     }
@@ -755,9 +756,9 @@ class DashDazzService : Service() {
         updateNotificationText()
     }
 
-    private fun shouldRunNow(): Boolean = when (_stateFlow.value.screenMode) {
-        SCREEN_ON_ONLY -> screenInteractive
-        SCREEN_OFF_ONLY -> !screenInteractive
+    internal fun shouldRunNow(): Boolean = when (_stateFlow.value.screenMode) {
+        SCREEN_ON_ONLY -> isScreenInteractive()
+        SCREEN_OFF_ONLY -> !isScreenInteractive()
         SCREEN_NOTIF_ONLY -> false
         else -> true
     }
@@ -1526,7 +1527,7 @@ class DashDazzService : Service() {
         }
     }
 
-    private fun enterChargingMode() {
+    internal fun enterChargingMode() {
         val s = _stateFlow.value
         autoChargeFromMode = s.mode
         autoChargeStartedService = !s.isRunning
@@ -1541,7 +1542,7 @@ class DashDazzService : Service() {
         autoChargeActive = true
     }
 
-    private fun exitChargingMode() {
+    internal fun exitChargingMode() {
         if (!autoChargeActive) {
             if (stillRunning() && shouldRunNow()) {
                 Log.d(TAG, "Power disconnected: taking the ring back once")
@@ -1561,7 +1562,7 @@ class DashDazzService : Service() {
         }
     }
 
-    private fun stillRunning(): Boolean =
+    internal fun stillRunning(): Boolean =
         _stateFlow.value.isRunning && !_stateFlow.value.isScreenPaused
 
     private fun stopLight() {
@@ -1605,13 +1606,10 @@ class DashDazzService : Service() {
         }
         pulseGen++
         activateGen++
-        if (screenReceiverRegistered) {
-            try {
-                unregisterReceiver(screenReceiver)
-            } catch (e: Exception) {
-                Log.w(TAG, "Unregistering screenReceiver failed", e)
-            }
-            screenReceiverRegistered = false
+        try {
+            unregisterReceiver(screenReceiver)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unregistering screenReceiver failed", e)
         }
 
         pulseJob?.cancel()
