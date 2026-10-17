@@ -1,6 +1,7 @@
 package com.dashdazz.light
 
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import com.dashdazz.light.lightsapi.ILightsManager
 import rikka.shizuku.Shizuku
@@ -44,8 +45,12 @@ object LightsBridge {
     }
 
     fun hasShizukuPermission(): Boolean {
-        return isShizukuAvailable() &&
-                Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        return try {
+            isShizukuAvailable() &&
+                    Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun getLightsManager(): ILightsManager? {
@@ -115,29 +120,64 @@ object LightsBridge {
     @Volatile
     private var rootCacheAtMs: Long = 0L
 
-    fun checkRootFresh(): Boolean {
+    private class ProcessResult(val finished: Boolean, val exitCode: Int, val output: String)
+
+    private fun runProcess(vararg cmd: String): ProcessResult {
         var p: Process? = null
-        val available = try {
-            p = ProcessBuilder("su", "-c", "id").redirectErrorStream(true).start()
-            val text = p.inputStream.bufferedReader().use { it.readText() }
-            val exited = p.waitFor(ROOT_TIMEOUT_SEC, TimeUnit.SECONDS)
-            exited && p.exitValue() == 0 && text.contains("uid=0")
-        } catch (_: Throwable) {
-            false
+        return try {
+            p = ProcessBuilder(*cmd).redirectErrorStream(true).start()
+            val collected = StringBuilder()
+            val drain = Thread {
+                try {
+                    p?.inputStream?.bufferedReader()?.use { reader ->
+                        val buf = CharArray(256)
+                        while (true) {
+                            val n = reader.read(buf)
+                            if (n < 0) break
+                            synchronized(collected) { collected.appendRange(buf, 0, n) }
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            drain.isDaemon = true
+            drain.start()
+            val finished = p.waitFor(ROOT_TIMEOUT_SEC, TimeUnit.SECONDS)
+            if (!finished) {
+                try {
+                    p.destroyForcibly()
+                } catch (_: Throwable) {
+                }
+            }
+            drain.join(200)
+            val text = synchronized(collected) { collected.toString() }
+            ProcessResult(
+                finished = finished,
+                exitCode = if (finished) runCatching { p.exitValue() }.getOrDefault(-1) else -1,
+                output = text
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Process failed: ${cmd.joinToString(" ")}", e)
+            ProcessResult(false, -1, "")
         } finally {
             try {
                 p?.destroy()
             } catch (_: Throwable) {
             }
         }
+    }
+
+    fun checkRootFresh(): Boolean {
+        val result = runProcess("su", "-c", "id")
+        val available = result.finished && result.exitCode == 0 && result.output.contains("uid=0")
         isRootCached = available
-        rootCacheAtMs = System.currentTimeMillis()
+        rootCacheAtMs = SystemClock.elapsedRealtime()
         return available
     }
 
     fun isRootAvailable(): Boolean {
         val cached = isRootCached
-        if (cached != null && System.currentTimeMillis() - rootCacheAtMs < ROOT_CACHE_TTL_MS) {
+        if (cached != null && SystemClock.elapsedRealtime() - rootCacheAtMs < ROOT_CACHE_TTL_MS) {
             return cached
         }
         return checkRootFresh()
@@ -149,24 +189,10 @@ object LightsBridge {
     }
 
     fun runRoot(cmd: String): Boolean {
-        var p: Process? = null
-        return try {
-            p = ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
-
-            val out = p.inputStream.bufferedReader().readText()
-            val exited = p.waitFor(ROOT_TIMEOUT_SEC, TimeUnit.SECONDS)
-            val ok = exited && p.exitValue() == 0
-            if (!ok) Log.w(TAG, "Root cmd exit=${runCatching { p.exitValue() }.getOrNull()} out=$out cmd=$cmd")
-            ok
-        } catch (e: Exception) {
-            Log.e(TAG, "Root command failed: $cmd", e)
-            false
-        } finally {
-            try {
-                p?.destroy()
-            } catch (_: Throwable) {
-            }
-        }
+        val result = runProcess("su", "-c", cmd)
+        val ok = result.finished && result.exitCode == 0
+        if (!ok) Log.w(TAG, "Root cmd exit=${result.exitCode} out=${result.output} cmd=$cmd")
+        return ok
     }
 
     fun ensureBackgroundSurvival(packageName: String): Boolean {
@@ -287,7 +313,7 @@ object LightsBridge {
         lastHwColorB = b
     }
 
-    private fun hex(v: Int): String = String.format("0x%02x", v.coerceIn(0, 255))
+    private fun hex(v: Int): String = String.format(java.util.Locale.ROOT, "0x%02x", v.coerceIn(0, 255))
 
     fun setHardwareColorDirect(colorArgb: Int): Boolean = synchronized(hwLock) {
         val c = sanitized(colorArgb)
@@ -488,6 +514,7 @@ object LightsBridge {
     fun turnOff(): Boolean {
         var rootOk = false
         var shizukuOk = false
+        stopSpin()
         trackPushed(0xFF000000.toInt())
         if (isRootAvailable()) {
             rootOk = hardwareOff()

@@ -6,6 +6,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.Visualizer
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import java.util.Arrays
 import java.util.concurrent.atomic.AtomicLong
@@ -476,6 +477,8 @@ object AudioReactiveEngine {
     private const val MAX_BEAT_GAP_MS = 430L
     private const val DIAGNOSTICS_INTERVAL_MS = 50L
     private const val MIN_PUMP_GAP_MS = 8L
+
+    internal const val captureErrorGate = "audio_gate_closed"
     private const val BEAT_TIME_MEMORY = 16
     private const val BIN_SCALE = 1f / 128f
     private const val DEFAULT_CAPTURE_SIZE = 1024
@@ -539,10 +542,11 @@ object AudioReactiveEngine {
     private val engineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val beatCount = AtomicLong(0)
 
-    private var visualizer: Visualizer? = null
-    private var micJob: Job? = null
-    private var retryJob: Job? = null
-    private var captureSize = DEFAULT_CAPTURE_SIZE
+    private val engineLock = Any()
+    @Volatile private var visualizer: Visualizer? = null
+    @Volatile private var micJob: Job? = null
+    @Volatile private var retryJob: Job? = null
+    @Volatile private var captureSize = DEFAULT_CAPTURE_SIZE
     @Volatile private var vizSampleRateHz = 44100
 
     @Volatile private var running = false
@@ -743,14 +747,14 @@ object AudioReactiveEngine {
         }
     }
 
-    fun start(): Boolean {
-        if (running) return true
+    fun start(): Boolean = synchronized(engineLock) {
+        if (running) return@synchronized true
         if (!isAudioSourceAllowed()) {
-            captureError = "No allowlisted app playing"
+            captureError = captureErrorGate
             _diagnostics.value = AudioDiagnostics(engineRunning = false, captureError = captureError)
-            return false
+            return@synchronized false
         }
-        resetDsp()
+        synchronized(pumpLock) { resetDsp() }
         val ok = if (audioSource == SOURCE_MIC) startMicCapture() else startVisualizer()
         if (!ok) {
 
@@ -759,21 +763,26 @@ object AudioReactiveEngine {
                 scheduleStartRetry()
             }
         }
-        return ok
+        ok
     }
 
     private fun scheduleStartRetry(attempt: Int = 1) {
         retryJob?.cancel()
         if (attempt > START_RETRY_MAX) return
-        retryJob = engineScope.launch {
+        val mine = engineScope.launch {
             delay(START_RETRY_BASE_MS * attempt)
-            if (running) return@launch
-            if (startVisualizer()) return@launch
+            if (running || retryJob !== coroutineContext[Job]) return@launch
+            synchronized(engineLock) {
+                if (running || !isAudioSourceAllowed()) return@launch
+                if (audioSource != SOURCE_GLOBAL_MIX) return@launch
+                if (startVisualizer()) return@launch
+            }
             _diagnostics.value = AudioDiagnostics(engineRunning = false, captureError = captureError)
             if (captureErrorRetryable) {
                 scheduleStartRetry(attempt + 1)
             }
         }
+        retryJob = mine
     }
 
     fun restart() {
@@ -793,7 +802,9 @@ object AudioReactiveEngine {
 
     fun refreshAudioGate() {
         if (!isAudioSourceAllowed()) {
-            if (running) stop()
+            retryJob?.cancel()
+            retryJob = null
+            if (running && !previewOwned) stop()
             return
         }
         val driving = DashDazzService.isRunning &&
@@ -811,6 +822,7 @@ object AudioReactiveEngine {
     fun endPreview() {
         if (!previewOwned) return
         previewOwned = false
+        if (DashDazzService.isRunning && DashDazzService.stateFlow.value.audioReactive) return
         stop()
     }
 
@@ -818,18 +830,23 @@ object AudioReactiveEngine {
         previewOwned = false
     }
 
-    fun stop(clearError: Boolean = true) {        val wasRunning = running
+    fun stop(clearError: Boolean = true) = synchronized(engineLock) {
+        val wasRunning = running
         micJob?.cancel()
         micJob = null
         retryJob?.cancel()
         retryJob = null
-        try {
-            visualizer?.enabled = false
-            visualizer?.release()
-        } catch (_: Exception) {
-        }
+        val viz = visualizer
         visualizer = null
         running = false
+        try {
+            viz?.enabled = false
+        } catch (_: Throwable) {
+        }
+        try {
+            viz?.release()
+        } catch (_: Throwable) {
+        }
 
         if (autoSensitivity) {
             appContext?.let { Prefs.setAudioBeatThreshold(it, beatThreshold) }
@@ -840,6 +857,12 @@ object AudioReactiveEngine {
     }
 
     private fun resetDsp() {
+        vizInput.level = 0f
+        vizInput.manual = 0f
+        vizInput.bands.fill(0f)
+        micInput.level = 0f
+        micInput.manual = 0f
+        micInput.bands.fill(0f)
         levelBand.reset()
         bassBand.reset()
         midBand.reset()
@@ -1125,7 +1148,8 @@ object AudioReactiveEngine {
     }
 
     private fun pumpLocked() {
-        val now = System.currentTimeMillis()
+        if (!running) return
+        val now = SystemClock.elapsedRealtime()
         if (now - lastPumpMs < MIN_PUMP_GAP_MS) return
         lastPumpMs = now
 
@@ -1307,7 +1331,7 @@ object AudioReactiveEngine {
         return (beatEnv * exp(-sinceBeat / BEAT_DECAY_MS)).coerceIn(0f, 1f)
     }
 
-    fun sample(nowMs: Long = System.currentTimeMillis()): AudioFrame =
+    fun sample(nowMs: Long = SystemClock.elapsedRealtime()): AudioFrame =
         synchronized(pumpLock) {
             AudioFrame(
                 nowMs = nowMs,

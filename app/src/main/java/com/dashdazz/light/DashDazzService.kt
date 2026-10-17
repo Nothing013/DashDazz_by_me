@@ -16,6 +16,7 @@ import android.graphics.Color as AndroidColor
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.service.quicksettings.TileService
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -533,6 +534,11 @@ class DashDazzService : Service() {
 
         restoreStateFromPrefs(this)
 
+        ioScope.launch {
+            Prefs.migrateLegacyFilters(this@DashDazzService)
+            Prefs.migrateLegacyNotificationMode(this@DashDazzService)
+        }
+
         scope.launch {
             runCatching { LightsBridge.turnOff() }
         }
@@ -557,8 +563,11 @@ class DashDazzService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        if (intent == null) return START_STICKY
-        val action = intent.action ?: return START_STICKY
+        if (intent == null || intent.action == null) {
+            recoverStickyRestart()
+            return START_STICKY
+        }
+        val action = intent.action
 
         when (action) {
             ACTION_STOP -> {
@@ -650,7 +659,9 @@ class DashDazzService : Service() {
                     runCatching { LightsBridge.ensureBackgroundSurvival(packageName) }
                 }
 
-                if (newScreenMode == SCREEN_NOTIF_ONLY) {
+                if (autoChargeActive && newMode == MODE_CHARGING) {
+                    launchAnimationLoopBypassScreenCheck()
+                } else if (newScreenMode == SCREEN_NOTIF_ONLY) {
 
                     _stateFlow.update { it.copy(isScreenPaused = true) }
                     pauseAnimationForScreenOff()
@@ -658,9 +669,7 @@ class DashDazzService : Service() {
                     return START_STICKY
                 }
 
-                if (autoChargeActive && newMode == MODE_CHARGING) {
-                    launchAnimationLoopBypassScreenCheck()
-                } else if (!wasRunning || modeChanged || (newMode == MODE_DUAL && dualStyleChanged) || job?.isActive != true) {
+                if (!wasRunning || modeChanged || (newMode == MODE_DUAL && dualStyleChanged) || job?.isActive != true) {
                     launchAnimationLoop()
                 } else {
                     evaluateScreenPolicy()
@@ -672,6 +681,21 @@ class DashDazzService : Service() {
         }
 
         return START_STICKY
+    }
+
+    private fun recoverStickyRestart() {
+        if (!_stateFlow.value.isRunning) return
+        Log.d(TAG, "Sticky restart with no intent: restoring foreground and animation")
+        runCatching { startAsForeground() }
+        rebindNotificationListener()
+        if (autoChargeActive) {
+            launchAnimationLoopBypassScreenCheck()
+        } else if (shouldRunNow()) {
+            launchAnimationLoop()
+        } else {
+            _stateFlow.update { it.copy(isScreenPaused = true) }
+            pauseAnimationForScreenOff()
+        }
     }
 
     private fun startAsForeground() {
@@ -740,6 +764,10 @@ class DashDazzService : Service() {
 
     internal fun evaluateScreenPolicy() {
         if (!_stateFlow.value.isRunning) return
+        if (autoChargeActive) {
+            if (job?.isActive != true) launchAnimationLoopBypassScreenCheck()
+            return
+        }
         if (shouldRunNow()) {
             if (_stateFlow.value.isScreenPaused || job?.isActive != true) {
                 launchAnimationLoop()
@@ -997,7 +1025,7 @@ class DashDazzService : Service() {
             }
 
             if (reactive()) {
-                val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
+                val frame = AudioReactiveEngine.sample(SystemClock.elapsedRealtime())
                 if (frame.silent) {
 
                     val factor = ((sin(angle) + 1.0) / 2.0).toFloat()
@@ -1037,7 +1065,7 @@ class DashDazzService : Service() {
                 val state = _stateFlow.value
                 val userBright = state.brightness.coerceIn(0.05f, 1f)
                 Color.colorToHSV(state.color, baseHsv)
-                val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
+                val frame = AudioReactiveEngine.sample(SystemClock.elapsedRealtime())
                 if (frame.silent) {
 
                     val targetColor = hsv(baseHsv[0], baseHsv[1], userBright)
@@ -1221,7 +1249,7 @@ class DashDazzService : Service() {
                 }
                 DUAL_BEAT_RAINBOW -> {
 
-                    val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
+                    val frame = AudioReactiveEngine.sample(SystemClock.elapsedRealtime())
                     if (frame.silent) {
 
                         beatHue = (beatHue + 1.5f) % 360f
@@ -1257,7 +1285,7 @@ class DashDazzService : Service() {
                 }
                 DUAL_SPLIT_BEAT -> {
 
-                    val frame = AudioReactiveEngine.sample(System.currentTimeMillis())
+                    val frame = AudioReactiveEngine.sample(SystemClock.elapsedRealtime())
                     if (frame.silent) {
 
                         val state = _stateFlow.value
@@ -1562,10 +1590,12 @@ class DashDazzService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        try {
-            LightsBridge.turnOff()
-        } catch (_: Throwable) {
-        }
+        Thread {
+            try {
+                LightsBridge.turnOff()
+            } catch (_: Throwable) {
+            }
+        }.apply { isDaemon = true }.start()
         super.onTaskRemoved(rootIntent)
     }
 
@@ -1587,18 +1617,16 @@ class DashDazzService : Service() {
         pulseJob?.cancel()
         activateJob?.cancel()
         LightsBridge.stopSpin()
-        scope.launch {
-            animationMutex.withLock {
-                job?.cancelAndJoin()
-                job = null
-            }
-        }
+        val loop = job
+        job = null
+        _stateFlow.update { it.copy(isRunning = false, isScreenPaused = false) }
         ioScope.launch {
+            loop?.cancelAndJoin()
             withContext(NonCancellable) {
                 runCatching { LightsBridge.turnOff() }
             }
+            ioScope.cancel()
         }
-        _stateFlow.update { it.copy(isRunning = false, isScreenPaused = false) }
         scope.cancel()
         super.onDestroy()
     }

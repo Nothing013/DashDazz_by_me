@@ -4,7 +4,6 @@ import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -29,67 +28,62 @@ class DashDazzNotificationListener : NotificationListenerService() {
     @Volatile
     private var mediaReclaimJob: kotlinx.coroutines.Job? = null
 
-    @Volatile
-    private var lastOffResetMs = 0L
-
     private val mediaSessionListener = object : MediaSessionManager.OnActiveSessionsChangedListener {
         override fun onActiveSessionsChanged(controllers: List<MediaController>?) {
             handleMediaSessionChange(controllers)
         }
     }
 
-    private fun handleMediaSessionChange(controllers: List<MediaController>?) {
-        val playingNow = controllers?.mapNotNull { ctrl ->
-            val state = ctrl.playbackState
-            if (state != null && state.state == PlaybackState.STATE_PLAYING) {
-                runCatching { ctrl.packageName }.getOrNull()
-            } else {
-                null
-            }
+    private fun playingPackagesOf(controllers: List<MediaController>?): Set<String> =
+        controllers?.mapNotNull { ctrl ->
+            if (ctrl.playbackState?.state == PlaybackState.STATE_PLAYING) ctrl.packageName else null
         }?.toSet() ?: emptySet()
-        val anyPlaying = playingNow.isNotEmpty()
-        if (playingNow != playingPackages) {
-            playingPackages = playingNow
-            listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+
+    private fun queryPlayingPackages(): Set<String>? {
+        return try {
+            val sessions = getSystemService(MediaSessionManager::class.java)
+                ?.getActiveSessions(ComponentName(this, DashDazzNotificationListener::class.java))
+                ?: return null
+            sessions.mapNotNull { c ->
+                if (c.playbackState?.state == PlaybackState.STATE_PLAYING) c.packageName else null
+            }.toSet()
+        } catch (e: Throwable) {
+            null
         }
+    }
+
+    private fun publishPlayingPackages(pkgs: Set<String>) {
+        if (pkgs == playingPackages) return
+        playingPackages = pkgs
+        listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+    }
+
+    private fun handleMediaSessionChange(controllers: List<MediaController>?) {
+        val playingNow = playingPackagesOf(controllers)
+        val anyPlaying = playingNow.isNotEmpty()
+        publishPlayingPackages(playingNow)
 
         if (anyPlaying && !mediaWasPlaying) {
-
-            Log.d(TAG, "Media playback started — scheduling recurring scene reclaims")
+            Log.d(TAG, "Media playback started: scheduling scene reclaims")
             mediaReclaimJob?.cancel()
             mediaReclaimJob = listenerScope.launch {
-
-                val schedule = listOf(500L, 1500L, 3000L, 5000L, 8000L)
-                for (waitMs in schedule) {
+                for (waitMs in RECLAIM_STEPS_MS) {
                     delay(waitMs)
-                    if (!DashDazzService.isRunning) continue
-                    val stillPlayingPkgs = runCatching {
-                        val sessions = getSystemService(MediaSessionManager::class.java)
-                            ?.getActiveSessions(ComponentName(this@DashDazzNotificationListener,
-                                DashDazzNotificationListener::class.java))
-                        sessions?.mapNotNull { c ->
-                            if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
-                                runCatching { c.packageName }.getOrNull()
-                            } else {
-                                null
-                            }
-                        }?.toSet() ?: emptySet()
-                    }.getOrDefault(emptySet())
-                    val stillPlaying = stillPlayingPkgs.isNotEmpty()
-                    if (stillPlayingPkgs != playingPackages) {
-                        playingPackages = stillPlayingPkgs
-                        listenerScope.launch { AudioReactiveEngine.refreshAudioGate() }
+                    val stillPlayingPkgs = queryPlayingPackages()
+                    if (stillPlayingPkgs == null) {
+                        Log.d(TAG, "Reclaim poll failed, keeping previous playback state")
+                        continue
                     }
-                    if (stillPlaying && !DashDazzService.stateFlow.value.isScreenPaused) {
+                    val stillPlaying = stillPlayingPkgs.isNotEmpty()
+                    publishPlayingPackages(stillPlayingPkgs)
+                    if (!stillPlaying) break
+                    if (DashDazzService.isRunning && !DashDazzService.stateFlow.value.isScreenPaused) {
                         LightsBridge.resetScene()
-                    } else if (!stillPlaying) {
-                        break
                     }
                 }
             }
         } else if (!anyPlaying && mediaWasPlaying) {
-
-            Log.d(TAG, "Media playback stopped — reclaiming LED control")
+            Log.d(TAG, "Media playback stopped: reclaiming LED control")
             listenerScope.launch {
                 delay(300)
                 if (DashDazzService.isRunning && !DashDazzService.stateFlow.value.isScreenPaused) {
@@ -117,6 +111,10 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        mediaReclaimJob?.cancel()
+        mediaReclaimJob = null
+        mediaWasPlaying = false
+        publishPlayingPackages(emptySet())
         try {
             requestRebind(ComponentName(this, DashDazzNotificationListener::class.java))
         } catch (e: Throwable) {
@@ -133,6 +131,7 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
         if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
         if ((notification.flags and Notification.FLAG_NO_CLEAR) != 0) return
+        if ((notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
 
         val allowedApps = Prefs.getNotifApps(this)
         if (Prefs.isNotifAppsFilter(this) && sbn.packageName !in allowedApps) return
@@ -154,8 +153,10 @@ class DashDazzNotificationListener : NotificationListenerService() {
             else -> {
 
                 listenerScope.launch {
-                    kotlinx.coroutines.delay(3500)
-                    LightsBridge.resetScene()
+                    delay(3500)
+                    if (DashDazzService.isRunning && !DashDazzService.stateFlow.value.isScreenPaused) {
+                        LightsBridge.resetScene()
+                    }
                 }
             }
         }
@@ -163,10 +164,21 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
+        if (sbn == null) return
+        if (sbn.packageName == packageName) return
+
+        val notification = sbn.notification ?: return
+        if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
+        if ((notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+
+        if (Prefs.isNotifAppsFilter(this) && sbn.packageName !in Prefs.getNotifApps(this)) return
+        if (Prefs.getNotificationMode(this) != Prefs.NOTIF_MODE_ACTIVATE) return
 
         listenerScope.launch {
-            kotlinx.coroutines.delay(500)
-            LightsBridge.resetScene()
+            delay(500)
+            if (DashDazzService.isRunning && !DashDazzService.stateFlow.value.isScreenPaused) {
+                LightsBridge.resetScene()
+            }
         }
     }
 
@@ -174,15 +186,21 @@ class DashDazzNotificationListener : NotificationListenerService() {
         try {
             val msm = getSystemService(MediaSessionManager::class.java)
             msm?.removeOnActiveSessionsChangedListener(mediaSessionListener)
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {
+            Log.w(TAG, "Removing media session listener failed", e)
+        }
         mediaReclaimJob?.cancel()
         mediaReclaimJob = null
+        mediaWasPlaying = false
+        playingPackages = emptySet()
         listenerScope.cancel()
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "DashDazzNotif"
+
+        private val RECLAIM_STEPS_MS = listOf(500L, 1500L, 3000L, 5000L, 8000L)
 
         @Volatile
         var playingPackages: Set<String> = emptySet()

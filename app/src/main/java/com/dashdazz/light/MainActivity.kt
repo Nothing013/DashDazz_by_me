@@ -2401,10 +2401,12 @@ fun DashDazzScreen(
                     onFilterChange = {
                         audioAppsFilterOn = it
                         Prefs.setAudioAppsFilter(context, it)
+                        AudioReactiveEngine.refreshAudioGate()
                     },
                     onChange = {
                         audioAllowedApps = it
                         Prefs.setAudioApps(context, it)
+                        AudioReactiveEngine.refreshAudioGate()
                     },
                     onDismiss = { showAudioAppPicker = false },
                     titleRes = R.string.audio_apps_title,
@@ -2783,7 +2785,9 @@ fun AudioTuningDialog(    onDismiss: () -> Unit,
 
                     if (!diag.hasAudioSignal) {
                         Text(
-                            text = if (diag.engineRunning) {
+                            text = if (diag.captureError == AudioReactiveEngine.captureErrorGate) {
+                                stringResource(R.string.audio_gate_closed)
+                            } else if (diag.engineRunning) {
                                 stringResource(R.string.audio_no_signal)
                             } else {
                                 stringResource(R.string.audio_capture_failed, diag.captureError ?: "")

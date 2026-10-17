@@ -277,16 +277,21 @@ object Prefs {
         prefs(context).edit().putStringSet(KEY_NOTIF_APPS, pkgs.toSet()).apply()
     }
 
-    fun isNotifAppsFilter(context: Context): Boolean {
+    fun isNotifAppsFilter(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NOTIF_APPS_FILTER, false)
+
+    fun migrateLegacyFilters(context: Context) {
         val p = prefs(context)
-        if (!p.contains(KEY_NOTIF_APPS_FILTER)) {
-            if (!p.getStringSet(KEY_NOTIF_APPS, emptySet()).isNullOrEmpty()) {
-                p.edit().putBoolean(KEY_NOTIF_APPS_FILTER, true).apply()
-                return true
-            }
-            return false
+        if (!p.contains(KEY_NOTIF_APPS_FILTER) &&
+            !p.getStringSet(KEY_NOTIF_APPS, emptySet()).isNullOrEmpty()
+        ) {
+            p.edit().putBoolean(KEY_NOTIF_APPS_FILTER, true).apply()
         }
-        return p.getBoolean(KEY_NOTIF_APPS_FILTER, false)
+        if (!p.contains(KEY_AUDIO_APPS_FILTER) &&
+            !p.getStringSet(KEY_AUDIO_APPS, emptySet()).isNullOrEmpty()
+        ) {
+            p.edit().putBoolean(KEY_AUDIO_APPS_FILTER, true).apply()
+        }
     }
 
     fun setNotifAppsFilter(context: Context, enabled: Boolean) {
@@ -300,17 +305,8 @@ object Prefs {
         prefs(context).edit().putStringSet(KEY_AUDIO_APPS, pkgs.toSet()).apply()
     }
 
-    fun isAudioAppsFilter(context: Context): Boolean {
-        val p = prefs(context)
-        if (!p.contains(KEY_AUDIO_APPS_FILTER)) {
-            if (!p.getStringSet(KEY_AUDIO_APPS, emptySet()).isNullOrEmpty()) {
-                p.edit().putBoolean(KEY_AUDIO_APPS_FILTER, true).apply()
-                return true
-            }
-            return false
-        }
-        return p.getBoolean(KEY_AUDIO_APPS_FILTER, false)
-    }
+    fun isAudioAppsFilter(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUDIO_APPS_FILTER, false)
 
     fun setAudioAppsFilter(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUDIO_APPS_FILTER, enabled).apply()
@@ -403,16 +399,15 @@ object Prefs {
     }
 
     fun getNotificationMode(context: Context, default: Int = NOTIF_MODE_OFF): Int {
+        return prefs(context).getInt(KEY_NOTIF_MODE, default)
+            .coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
+    }
 
+    fun migrateLegacyNotificationMode(context: Context) {
         val p = prefs(context)
-        if (!p.contains(KEY_NOTIF_MODE)) {
-            if (p.getBoolean(KEY_BLINK_ON_NOTIFICATION, false)) {
-                p.edit().putInt(KEY_NOTIF_MODE, NOTIF_MODE_ACTIVATE).apply()
-                return NOTIF_MODE_ACTIVATE
-            }
-            return default.coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
+        if (!p.contains(KEY_NOTIF_MODE) && p.getBoolean(KEY_BLINK_ON_NOTIFICATION, false)) {
+            p.edit().putInt(KEY_NOTIF_MODE, NOTIF_MODE_ACTIVATE).apply()
         }
-        return p.getInt(KEY_NOTIF_MODE, default).coerceIn(NOTIF_MODE_OFF, NOTIF_MODE_ACTIVATE)
     }
 
     fun setNotificationMode(context: Context, mode: Int) {

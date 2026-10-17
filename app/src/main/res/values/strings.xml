@@ -120,6 +120,7 @@
     <string name="audio_apps_all_desc">React to music from any app</string>
     <string name="audio_apps_count">%1$d apps</string>
     <string name="audio_apps_mic_note">App selection applies to Global Media Mix only. Microphone captures the room.</string>
+    <string name="audio_gate_closed">Waiting for a selected app to play</string>
     <string name="audio_reactive_on_desc">The selected mode is driven by the music</string>
     <string name="audio_reactive_off_desc">The selected mode runs on its own animation</string>
     <string name="notif_audio_suffix">+ Audio</string>

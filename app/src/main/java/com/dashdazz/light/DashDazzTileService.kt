@@ -3,6 +3,7 @@ package com.dashdazz.light
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.SystemClock
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.annotation.RequiresApi
@@ -13,6 +14,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @RequiresApi(Build.VERSION_CODES.N)
 class DashDazzTileService : TileService() {
@@ -48,36 +51,44 @@ class DashDazzTileService : TileService() {
     override fun onClick() {
         super.onClick()
 
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
         if (now - lastClickMs < 800L) return
         lastClickMs = now
 
-        val canRun = LightsBridge.isRootAvailable() ||
-                (LightsBridge.isShizukuAvailable() && LightsBridge.hasShizukuPermission())
-        if (!canRun) {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            @Suppress("DEPRECATION")
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && isLocked) {
-                    unlockAndRun { startActivityAndCollapse(intent) }
-                } else {
-                    startActivityAndCollapse(intent)
-                }
-            } catch (_: Throwable) {
-                try {
-                    startActivity(intent)
-                } catch (_: Throwable) {
-                }
-            }
+        if (DashDazzService.isRunning) {
+            DashDazzService.stop(this)
             return
         }
 
-        if (DashDazzService.isRunning) {
-            DashDazzService.stop(this)
-        } else {
-            DashDazzService.start(this)
+        scope.launch {
+            val canRun = withContext(Dispatchers.IO) {
+                LightsBridge.isRootAvailable() ||
+                        (LightsBridge.isShizukuAvailable() && LightsBridge.hasShizukuPermission())
+            }
+            if (!canRun) {
+                openLauncher()
+                return@launch
+            }
+            DashDazzService.start(this@DashDazzTileService)
+        }
+    }
+
+    private fun openLauncher() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        @Suppress("DEPRECATION")
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && isLocked) {
+                unlockAndRun { startActivityAndCollapse(intent) }
+            } else {
+                startActivityAndCollapse(intent)
+            }
+        } catch (_: Throwable) {
+            try {
+                startActivity(intent)
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -107,6 +118,7 @@ class DashDazzTileService : TileService() {
             DashDazzService.MODE_BREATHE -> getString(R.string.mode_breathe)
             DashDazzService.MODE_SOLID -> getString(R.string.mode_solid)
             DashDazzService.MODE_DUAL -> getString(R.string.mode_dual)
+            DashDazzService.MODE_CHARGING -> getString(R.string.mode_charging)
             else -> getString(R.string.mode_rainbow)
         }
         val detail = if (state.mode == DashDazzService.MODE_DUAL) {
