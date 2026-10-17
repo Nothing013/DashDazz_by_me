@@ -456,7 +456,6 @@ object Prefs {
             frameMinMs = getFrameMinMs(context)
         )
     }
-}
 
     // --- Task 1: Hyper-Glow UI & Theming Customization ---
     const val ACCENT_NEON_CYAN = 0xFF00E5FF.toInt()
@@ -596,3 +595,4 @@ object Prefs {
             .putInt(KEY_QUIET_END_MIN, endM)
             .apply()
     }
+}
