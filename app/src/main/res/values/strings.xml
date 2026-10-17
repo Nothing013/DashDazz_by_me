@@ -195,6 +195,18 @@
 
     <string name="title_shizuku">Shizuku Status</string>
     <string name="title_about">About DashDazz</string>
+    <string name="update_check_title">Check for updates</string>
+    <string name="update_check_desc">Look for a newer DashDazz release</string>
+    <string name="update_checking">Checking for updates</string>
+    <string name="update_up_to_date">You are on the latest version</string>
+    <string name="update_available">%1$s is available</string>
+    <string name="update_downloading">Downloading %1$d%%</string>
+    <string name="update_downloading_desc">Downloading update</string>
+    <string name="update_install">Download and install</string>
+    <string name="update_failed">Update check failed, tap to retry</string>
+    <string name="update_need_permission">Allow installs from this app to finish updating</string>
+    <string name="update_download_failed">Download failed, tap to retry</string>
+
     <string name="about_desc">Hardware Camera Ring Controller for POCO X8 Pro Max (Dash) by @ttertekann</string>
     <string name="about_version">v%1$s · build %2$d</string>
 

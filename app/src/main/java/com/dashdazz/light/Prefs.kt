@@ -41,6 +41,7 @@ object Prefs {
     private const val KEY_AUDIO_APPS = "key_audio_apps"
     private const val KEY_AUDIO_APPS_FILTER = "key_audio_apps_filter"
     private const val KEY_AUTO_CHARGING = "key_auto_charging"
+    private const val KEY_UPDATE_LAST_CHECK_MS = "key_update_last_check_ms"
 
     data class AudioConfig(
         val source: Int,
@@ -317,6 +318,13 @@ object Prefs {
 
     fun setAutoCharging(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTO_CHARGING, enabled).apply()
+    }
+
+    fun getUpdateLastCheckMs(context: Context): Long =
+        prefs(context).getLong(KEY_UPDATE_LAST_CHECK_MS, 0L)
+
+    fun setUpdateLastCheckMs(context: Context, ms: Long) {
+        prefs(context).edit().putLong(KEY_UPDATE_LAST_CHECK_MS, ms).apply()
     }
 
     fun isFlashOnLock(context: Context): Boolean =

@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import rikka.shizuku.Shizuku
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.extra.*
@@ -253,6 +255,24 @@ private fun openStripLightSettings(context: Context) {
             return
         } catch (_: Exception) {
         }
+    }
+}
+
+@Composable
+private fun updateStatusLabel(
+    status: UpdateChecker.UpdateStatus,
+    progress: Int,
+    desc: String,
+    install: String
+): String = when {
+    progress in 0..99 -> "$progress%"
+    progress == 100 -> "100%"
+    else -> when (status) {
+        is UpdateChecker.UpdateStatus.Idle -> desc
+        is UpdateChecker.UpdateStatus.Checking -> desc
+        is UpdateChecker.UpdateStatus.UpToDate -> "Up to date"
+        is UpdateChecker.UpdateStatus.Available -> install
+        is UpdateChecker.UpdateStatus.Failed -> "Check failed, tap to retry"
     }
 }
 
@@ -560,6 +580,55 @@ fun DashDazzScreen(
     var flashLock by remember { mutableStateOf(Prefs.isFlashOnLock(context)) }
     var flashUnlock by remember { mutableStateOf(Prefs.isFlashOnUnlock(context)) }
     var autoCharging by remember { mutableStateOf(Prefs.isAutoCharging(context)) }
+    val updateScope = rememberCoroutineScope()
+    var updateStatus by remember { mutableStateOf<UpdateChecker.UpdateStatus>(UpdateChecker.UpdateStatus.Idle) }
+    var updateProgress by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(Unit) {
+        if (!UpdateChecker.canAutoCheck(context)) return@LaunchedEffect
+        updateStatus = UpdateChecker.UpdateStatus.Checking
+        updateStatus = UpdateChecker.check(context)
+    }
+
+    fun startUpdateCheck() {
+        if (updateProgress >= 0) return
+        updateScope.launch {
+            updateStatus = UpdateChecker.UpdateStatus.Checking
+            updateStatus = UpdateChecker.check(context)
+        }
+    }
+
+    fun installUpdate(tag: String) {
+        updateScope.launch {
+            updateProgress = 0
+            val result = UpdateChecker.download(context, tag) { pct ->
+                updateProgress = pct
+            }
+            updateProgress = -1
+            val apk = result.getOrNull()
+            if (apk == null) {
+                updateStatus = UpdateChecker.UpdateStatus.Failed("download_failed")
+                return@launch
+            }
+            val ok = runCatching {
+                if (!UpdateChecker.canInstallPackages(context)) {
+                    context.startActivity(UpdateChecker.installPermissionIntent(context))
+                } else {
+                    context.startActivity(UpdateChecker.installIntent(context, apk))
+                }
+            }.isSuccess
+            if (!ok) {
+                updateStatus = UpdateChecker.UpdateStatus.Failed("download_failed")
+            }
+        }
+    }
+
+    fun onUpdateClick() {
+        when (val s = updateStatus) {
+            is UpdateChecker.UpdateStatus.Available -> installUpdate(s.tag)
+            else -> startUpdateCheck()
+        }
+    }
     var showAudioTuningDialog by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var allowedApps by remember { mutableStateOf(Prefs.getNotifApps(context)) }
@@ -2365,6 +2434,17 @@ fun DashDazzScreen(
                                 text = stringResource(R.string.about_desc),
                                 fontSize = 13.sp,
                                 color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            SuperArrow(
+                                title = stringResource(R.string.update_check_title),
+                                summary = updateStatusLabel(
+                                    updateStatus,
+                                    updateProgress,
+                                    stringResource(R.string.update_check_desc),
+                                    stringResource(R.string.update_install)
+                                ),
+                                onClick = { onUpdateClick() }
                             )
                         }
                     }
