@@ -786,6 +786,17 @@ fun DashDazzScreen(
                         .animateContentSize(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    InteractiveRingPreviewHeader(
+                        mode = serviceState.mode,
+                        currentColor = serviceState.color,
+                        brightness = serviceState.brightness,
+                        speedMs = serviceState.speedMs,
+                        isRunning = serviceState.isRunning,
+                        isScreenPaused = serviceState.isScreenPaused,
+                        accentColor = Color(Prefs.getAccentColor(context)),
+                        glowIntensity = Prefs.getGlowIntensity(context),
+                        isAmoled = Prefs.isAmoledMode(context)
+                    )
 
                     var conflictDismissed by remember(hasConflict) {
                         mutableStateOf(!hasConflict || Prefs.isConflictDismissed(context))
@@ -896,14 +907,18 @@ fun DashDazzScreen(
                             ) {
                                 val modeItems = buildList {
                                     add(DashDazzService.MODE_RAINBOW to R.string.mode_rainbow)
-
                                     if (!serviceState.audioReactive) {
                                         add(DashDazzService.MODE_BREATHE to R.string.mode_breathe)
+                                        add(DashDazzService.MODE_BREATHE_FADE to R.string.mode_breathe_fade)
+                                        add(DashDazzService.MODE_CANDLE to R.string.mode_candle)
                                     }
                                     add(DashDazzService.MODE_SOLID to R.string.mode_solid)
+                                    add(DashDazzService.MODE_STROBE to R.string.mode_strobe)
                                     add(DashDazzService.MODE_CHARGING to R.string.mode_charging)
                                     if (isRootAvailable) {
                                         add(DashDazzService.MODE_DUAL to R.string.mode_dual)
+                                        add(DashDazzService.MODE_NEON_CYBER to R.string.mode_neon_cyber)
+                                        add(DashDazzService.MODE_COMET_CHASER to R.string.mode_comet_chaser)
                                     }
                                 }
                                 modeItems.forEach { (modeId, titleRes) ->
@@ -1911,6 +1926,9 @@ fun DashDazzScreen(
                         .animateContentSize(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    HyperGlowThemingCard(context)
+                    AdvancedChargingSettingsCard(context)
+                    SystemAutomationsCard(context)
 
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {

@@ -68,7 +68,12 @@ class DashDazzNotificationListener : NotificationListenerService() {
 
     private fun handleMediaSessionChange(controllers: List<MediaController>?) {
         val playingNow = playingPackagesOf(controllers)
-        val anyPlaying = playingNow.isNotEmpty()
+        val filterMode = Prefs.getMediaAllowlistMode(this)
+        val allowlistedApps = Prefs.getMediaAllowlistApps(this)
+        val allowedByFilter = MediaAllowlistManager.shouldAudioTriggerForPackages(
+            playingNow, filterMode, allowlistedApps
+        )
+        val anyPlaying = playingNow.isNotEmpty() && allowedByFilter
         publishPlayingPackages(playingNow)
 
         if (anyPlaying && !mediaWasPlaying) {

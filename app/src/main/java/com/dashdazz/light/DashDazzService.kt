@@ -93,6 +93,12 @@ class DashDazzService : Service() {
         const val MODE_AUDIO_REACTIVE = 4
 
         const val MODE_CHARGING = 5
+        const val MODE_SPECTRUM_WAVE = 6
+        const val MODE_STROBE = 7
+        const val MODE_CANDLE = 8
+        const val MODE_NEON_CYBER = 9
+        const val MODE_COMET_CHASER = 10
+        const val MODE_BREATHE_FADE = 11
 
         const val SCREEN_ON_ONLY = 0
         const val SCREEN_OFF_ONLY = 1
@@ -140,7 +146,15 @@ class DashDazzService : Service() {
             }
             if (Prefs.isFlashScreen(context)) {
                 Log.d(TAG, "Flash on ${if (interactive) "unlock" else "lock"} firing")
-                flashScreenEvent(context)
+                if (svc != null) {
+                    svc.priorityManager.setTriggerActive(
+                        TriggerPriorityManager.TriggerType.LOCK_UNLOCK_FLASH,
+                        true,
+                        TriggerPriorityManager.TriggerPayload(color = Prefs.getColor(context), durationMs = 800L)
+                    )
+                } else {
+                    flashScreenEvent(context)
+                }
             }
         }
 
@@ -471,6 +485,11 @@ class DashDazzService : Service() {
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var watchdog: LedStateWatchdog? = null
+    private var pocketGuard: SystemAutomationsManager.PocketGuard? = null
+    val priorityManager = TriggerPriorityManager { activeType, payload ->
+        handlePriorityTriggerChanged(activeType, payload)
+    }
 
     internal val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -518,6 +537,23 @@ class DashDazzService : Service() {
             (getSystemService(android.os.PowerManager::class.java)?.isInteractive) ?: true
         ecoOverride = (getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode) ?: false
         createNotificationChannel()
+        LedEventLogger.isEnabled = Prefs.isInternalLoggerEnabled(this)
+        watchdog = LedStateWatchdog(
+            isExpectedActive = {
+                _stateFlow.value.isRunning && !_stateFlow.value.isScreenPaused &&
+                (shouldRunNow() || priorityManager.resolveActiveTrigger() != null)
+            },
+            onForceOffNeeded = {
+                LedEventLogger.log("DashDazzWatchdog", "Forcing hardware OFF to correct dropped state")
+                LightsBridge.turnOff()
+            }
+        )
+        watchdog?.start(scope)
+        if (Prefs.isPocketGuardEnabled(this)) {
+            pocketGuard = SystemAutomationsManager.PocketGuard(this) { isCovered ->
+                evaluateScreenPolicy()
+            }.apply { start() }
+        }
 
         LightsBridge.logColorLightSurface()
 
@@ -743,11 +779,32 @@ class DashDazzService : Service() {
         notifyTileState(this)
     }
 
-    internal fun shouldRunNow(): Boolean = when (_stateFlow.value.screenMode) {
-        SCREEN_ON_ONLY -> isScreenInteractive()
-        SCREEN_OFF_ONLY -> !isScreenInteractive()
-        SCREEN_NOTIF_ONLY -> false
-        else -> true
+    internal fun shouldRunNow(): Boolean {
+        if (Prefs.isQuietHoursEnabled(this)) {
+            if (SystemAutomationsManager.isQuietHoursActiveNow(
+                    Prefs.getQuietStartHour(this), Prefs.getQuietStartMin(this),
+                    Prefs.getQuietEndHour(this), Prefs.getQuietEndMin(this)
+                )) {
+                LedEventLogger.log(TAG, "Suppressed by Quiet Hours schedule")
+                return false
+            }
+        }
+        if (Prefs.isDndSyncEnabled(this)) {
+            if (SystemAutomationsManager.isDndOrSilentActive(this)) {
+                LedEventLogger.log(TAG, "Suppressed by DND / Silent Mode")
+                return false
+            }
+        }
+        if (pocketGuard?.isCovered == true && Prefs.isPocketGuardEnabled(this)) {
+            LedEventLogger.log(TAG, "Suppressed by Pocket Proximity Guard")
+            return false
+        }
+        return when (_stateFlow.value.screenMode) {
+            SCREEN_ON_ONLY -> isScreenInteractive()
+            SCREEN_OFF_ONLY -> !isScreenInteractive()
+            SCREEN_NOTIF_ONLY -> false
+            else -> true
+        }
     }
 
     internal fun evaluateScreenPolicy() {
@@ -809,6 +866,12 @@ class DashDazzService : Service() {
             MODE_SOLID -> runSolidLoop()
             MODE_DUAL -> runDualLoop()
             MODE_CHARGING -> runChargingLoop()
+            MODE_SPECTRUM_WAVE -> runRainbowLoop()
+            MODE_STROBE -> runStrobeLoop()
+            MODE_CANDLE -> runCandleLoop()
+            MODE_NEON_CYBER -> runNeonCyberLoop()
+            MODE_COMET_CHASER -> runCometLoop()
+            MODE_BREATHE_FADE -> runBreatheFadeLoop()
             else -> runRainbowLoop()
         }
     }
@@ -1324,6 +1387,11 @@ class DashDazzService : Service() {
             startAsForeground()
         }
 
+        watchdog?.stop()
+        watchdog = null
+        pocketGuard?.stop()
+        pocketGuard = null
+        priorityManager.clearAll()
         pulseJob?.cancel()
         pulseJob = scope.launch {
             try {

@@ -260,29 +260,29 @@ object LightsBridge {
 
 
     fun hardwareOff(): Boolean = synchronized(hwLock) {
-        trackPushed(0xFF000000.toInt())
-        runRoot(
-            "SYS=\"$SYS_REG\"; " +
-                    "echo 0 > \"$SYS_EFFECT\" && " +
-                    "echo '0xa1 0x00' > \"\$SYS\" && " +
-                    "echo '0xab 0x00' > \"\$SYS\""
-        )
-    }
-
-    fun resetHardwareToGlobal(): Boolean {
-        if (!isRootAvailable()) return false
-        synchronized(hwLock) {
-            val cmd = "SYS=\"$SYS_REG\"; " +
-                    "echo 1 > \"$SYS_HWEN\" && " +
-                    "echo 2 > \"$SYS_EFFECT\" && " +
-                    "echo '0x00 0x11' > \"\$SYS\" && " +
-                    "echo '0x6e 0xff' > \"\$SYS\" && " +
-                    "echo '0x7a 0x00' > \"\$SYS\" && " +
-                    "echo '0xa0 0x00' > \"\$SYS\" && " +
-                    "echo '0xa1 0x00' > \"\$SYS\" && " +
-                    "echo '0xa7 0xcc' > \"\$SYS\" && " +
-                    "echo '0xab 0xff' > \"\$SYS\""
-            return runRoot(cmd)
+        synchronized(fastLock) {
+            trackPushed(0x00000000)
+            LedEventLogger.log(TAG, "hardwareOff() invoked - full AW21024 shutdown")
+            val cmd = "SYS="$SYS_REG"; " +
+                    "echo 0 > "$SYS_EFFECT" && " +
+                    "echo '0x6e 0x00' > "\$SYS" && " +
+                    "echo '0xa1 0x00' > "\$SYS" && " +
+                    "echo '0xa0 0x00' > "\$SYS" && " +
+                    "echo '0xa8 0x00' > "\$SYS" && " +
+                    "echo '0xa9 0x00' > "\$SYS" && " +
+                    "echo '0xaa 0x00' > "\$SYS" && " +
+                    "echo '0xab 0x00' > "\$SYS" && " +
+                    "echo '0xac 0x00' > "\$SYS""
+            fastWriter?.let { w ->
+                try {
+                    w.write((cmd + "
+").toByteArray())
+                    w.flush()
+                } catch (_: Throwable) {
+                    destroyFastShellLocked()
+                }
+            }
+            runRoot(cmd)
         }
     }
 
@@ -429,9 +429,10 @@ object LightsBridge {
 
 
     fun turnOff(): Boolean {
+        LedEventLogger.log(TAG, "turnOff() called")
         var rootOk = false
         var shizukuOk = false
-        trackPushed(0xFF000000.toInt())
+        trackPushed(0x00000000)
         if (isRootAvailable()) {
             rootOk = hardwareOff()
         }

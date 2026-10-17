@@ -205,4 +205,42 @@
     <string name="setup_need_one">Neither Root nor Shizuku is available yet. You need at least one to control the light.</string>
     <string name="setup_continue">Continue</string>
     <string name="setup_continue_anyway">Continue anyway</string>
+    <!-- Task 1: Extended Lighting Effects & Theming -->
+    <string name="mode_spectrum_wave">Spectrum Wave</string>
+    <string name="mode_strobe">Pulse Strobe</string>
+    <string name="mode_candle">Candle Flicker</string>
+    <string name="mode_neon_cyber">Neon Cyberpunk</string>
+    <string name="mode_comet_chaser">Comet Chaser</string>
+    <string name="mode_breathe_fade">Breathe &amp; Fade</string>
+    <string name="title_accent_color">UI Accent Color</string>
+    <string name="title_amoled_mode">Pure AMOLED Dark Mode</string>
+    <string name="desc_amoled_mode">True-black background to maximize OLED battery life</string>
+    <string name="title_card_density">Compact Layout Density</string>
+    <string name="title_glow_intensity">Hyper-Glow Intensity</string>
+    <string name="title_custom_palettes">Preset Palettes Manager</string>
+    
+    <!-- Task 4: Advanced Charging Engine -->
+    <string name="title_charging_engine">Advanced Charging Engine</string>
+    <string name="title_charging_style">Charging Animation Style</string>
+    <string name="charging_style_breathe">Adaptive Pulse (Fast/Warp)</string>
+    <string name="charging_style_gauge">Battery Level Fill Gauge</string>
+    <string name="charging_style_gradient">Dynamic Color Gradient</string>
+    <string name="title_low_battery_flash">Low Battery Warning Flash</string>
+    <string name="desc_low_battery_flash">Subtle alert flash when battery drops below 15%</string>
+
+    <!-- Task 5: Media Allowlist -->
+    <string name="title_media_allowlist">Media Audio Allowlist</string>
+    <string name="media_mode_all">All System Audio</string>
+    <string name="media_mode_allowlist">Selected Apps Only</string>
+
+    <!-- Task 6: System Automations -->
+    <string name="title_quiet_hours">Quiet Hours Schedule</string>
+    <string name="desc_quiet_hours">Mute camera ring during night hours (e.g. 11 PM to 7 AM)</string>
+    <string name="title_dnd_sync">DND / Silent Mode Sync</string>
+    <string name="desc_dnd_sync">Suppress ring lighting when Do Not Disturb or Silent is active</string>
+    <string name="title_pocket_guard">Pocket &amp; Proximity Guard</string>
+    <string name="desc_pocket_guard">Mute ring lighting when phone is face down or in pocket</string>
+    <string name="title_developer_logger">LED State Transition Logger</string>
+    <string name="desc_developer_logger">Record internal hardware state transitions for debugging</string>
+
 </resources>

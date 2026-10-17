@@ -457,3 +457,142 @@ object Prefs {
         )
     }
 }
+
+    // --- Task 1: Hyper-Glow UI & Theming Customization ---
+    const val ACCENT_NEON_CYAN = 0xFF00E5FF.toInt()
+    const val ACCENT_CYBER_PURPLE = 0xFF9D4EDD.toInt()
+    const val ACCENT_ELECTRIC_AMBER = 0xFFFF9E00.toInt()
+    const val ACCENT_HYPER_GREEN = 0xFF00F5D4.toInt()
+    const val ACCENT_AMOLED_WHITE = 0xFFFFFFFF.toInt()
+
+    private const val KEY_ACCENT_COLOR = "key_accent_color"
+    private const val KEY_AMOLED_MODE = "key_amoled_mode"
+    private const val KEY_CARD_DENSITY = "key_card_density"
+    private const val KEY_GLOW_INTENSITY = "key_glow_intensity"
+
+    fun getAccentColor(context: Context): Int =
+        prefs(context).getInt(KEY_ACCENT_COLOR, ACCENT_NEON_CYAN)
+
+    fun setAccentColor(context: Context, color: Int) {
+        prefs(context).edit().putInt(KEY_ACCENT_COLOR, color).apply()
+    }
+
+    fun isAmoledMode(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AMOLED_MODE, false)
+
+    fun setAmoledMode(context: Context, amoled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AMOLED_MODE, amoled).apply()
+    }
+
+    fun isCompactDensity(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CARD_DENSITY, false)
+
+    fun setCompactDensity(context: Context, compact: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CARD_DENSITY, compact).apply()
+    }
+
+    fun getGlowIntensity(context: Context): Float =
+        prefs(context).getFloat(KEY_GLOW_INTENSITY, 0.8f).coerceIn(0.0f, 1.0f)
+
+    fun setGlowIntensity(context: Context, intensity: Float) {
+        prefs(context).edit().putFloat(KEY_GLOW_INTENSITY, intensity.coerceIn(0.0f, 1.0f)).apply()
+    }
+
+    // --- Task 2: Developer Logger ---
+    private const val KEY_INTERNAL_LOGGER_ENABLED = "key_internal_logger_enabled"
+
+    fun isInternalLoggerEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_INTERNAL_LOGGER_ENABLED, false)
+
+    fun setInternalLoggerEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_INTERNAL_LOGGER_ENABLED, enabled).apply()
+        LedEventLogger.isEnabled = enabled
+    }
+
+    // --- Task 4: Advanced Charging Engine ---
+    private const val KEY_CHARGING_STYLE = "key_charging_style"
+    private const val KEY_CHARGING_LOW_BATTERY_FLASH = "key_charging_low_battery_flash"
+    private const val KEY_CHARGING_FULL_TIMEOUT_SEC = "key_charging_full_timeout_sec"
+
+    fun getChargingStyle(context: Context): Int =
+        prefs(context).getInt(KEY_CHARGING_STYLE, ChargingEngine.STYLE_BREATHE)
+
+    fun setChargingStyle(context: Context, style: Int) {
+        prefs(context).edit().putInt(KEY_CHARGING_STYLE, style).apply()
+    }
+
+    fun isLowBatteryFlashEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CHARGING_LOW_BATTERY_FLASH, true)
+
+    fun setLowBatteryFlashEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CHARGING_LOW_BATTERY_FLASH, enabled).apply()
+    }
+
+    fun getChargingFullTimeoutSec(context: Context): Int =
+        prefs(context).getInt(KEY_CHARGING_FULL_TIMEOUT_SEC, 30)
+
+    fun setChargingFullTimeoutSec(context: Context, sec: Int) {
+        prefs(context).edit().putInt(KEY_CHARGING_FULL_TIMEOUT_SEC, sec).apply()
+    }
+
+    // --- Task 5: Media Allowlist ---
+    private const val KEY_MEDIA_ALLOWLIST_MODE = "key_media_allowlist_mode"
+    private const val KEY_MEDIA_ALLOWLIST_APPS = "key_media_allowlist_apps"
+
+    fun getMediaAllowlistMode(context: Context): Int =
+        prefs(context).getInt(KEY_MEDIA_ALLOWLIST_MODE, MediaAllowlistManager.MODE_ALL_AUDIO)
+
+    fun setMediaAllowlistMode(context: Context, mode: Int) {
+        prefs(context).edit().putInt(KEY_MEDIA_ALLOWLIST_MODE, mode).apply()
+    }
+
+    fun getMediaAllowlistApps(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_MEDIA_ALLOWLIST_APPS, emptySet())?.toSet() ?: emptySet()
+
+    fun setMediaAllowlistApps(context: Context, apps: Set<String>) {
+        prefs(context).edit().putStringSet(KEY_MEDIA_ALLOWLIST_APPS, apps).apply()
+    }
+
+    // --- Task 6: System Automations ---
+    private const val KEY_DND_SYNC_ENABLED = "key_dnd_sync_enabled"
+    private const val KEY_POCKET_GUARD_ENABLED = "key_pocket_guard_enabled"
+    private const val KEY_QUIET_HOURS_ENABLED = "key_quiet_hours_enabled"
+    private const val KEY_QUIET_START_HOUR = "key_quiet_start_hour"
+    private const val KEY_QUIET_START_MIN = "key_quiet_start_min"
+    private const val KEY_QUIET_END_HOUR = "key_quiet_end_hour"
+    private const val KEY_QUIET_END_MIN = "key_quiet_end_min"
+
+    fun isDndSyncEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DND_SYNC_ENABLED, false)
+
+    fun setDndSyncEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DND_SYNC_ENABLED, enabled).apply()
+    }
+
+    fun isPocketGuardEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_POCKET_GUARD_ENABLED, false)
+
+    fun setPocketGuardEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_POCKET_GUARD_ENABLED, enabled).apply()
+    }
+
+    fun isQuietHoursEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_QUIET_HOURS_ENABLED, false)
+
+    fun setQuietHoursEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_QUIET_HOURS_ENABLED, enabled).apply()
+    }
+
+    fun getQuietStartHour(context: Context): Int = prefs(context).getInt(KEY_QUIET_START_HOUR, 23)
+    fun getQuietStartMin(context: Context): Int = prefs(context).getInt(KEY_QUIET_START_MIN, 0)
+    fun getQuietEndHour(context: Context): Int = prefs(context).getInt(KEY_QUIET_END_HOUR, 7)
+    fun getQuietEndMin(context: Context): Int = prefs(context).getInt(KEY_QUIET_END_MIN, 0)
+
+    fun setQuietHoursTime(context: Context, startH: Int, startM: Int, endH: Int, endM: Int) {
+        prefs(context).edit()
+            .putInt(KEY_QUIET_START_HOUR, startH)
+            .putInt(KEY_QUIET_START_MIN, startM)
+            .putInt(KEY_QUIET_END_HOUR, endH)
+            .putInt(KEY_QUIET_END_MIN, endM)
+            .apply()
+    }
