@@ -52,6 +52,8 @@ dashdazz.keyAlias=...
 3. Open DashDazz and grant access: **Root** for full features incl. Dual Ring, or start **Shizuku** for basic modes with no root.
 4. Pick a lighting mode, tune colors and speed, and turn the ring on. Optionally enable Audio Reactive (needs microphone permission) or notification lighting.
 
+Later versions can be installed from inside the app: **Settings -> About -> Check for updates**. The app checks once a day when it opens, verifies the downloaded APK is signed with the same key as your installed copy, then hands it to the system installer.
+
 ## License
 
 GPL-3.0-or-later. See `LICENSE` and `NOTICE`.
