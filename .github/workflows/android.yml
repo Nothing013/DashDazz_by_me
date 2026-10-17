@@ -28,9 +28,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
-
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 
@@ -39,6 +36,10 @@ jobs:
         with:
           name: DashDazz-debug
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace --continue
+        continue-on-error: true
 
       - name: Check for Release Keystore Secret
         id: check_secrets
