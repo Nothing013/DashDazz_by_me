@@ -20,12 +20,12 @@ class ChargingStateMachineTest {
         val midBatteryColor = ChargingEngine.getGradientColorForPercentage(50)
         val fullBatteryColor = ChargingEngine.getGradientColorForPercentage(98)
 
-        // Verify non-zero ARGB colors
+        // Verify valid ARGB colors
         assertNotEquals(0, lowBatteryColor)
         assertNotEquals(0, midBatteryColor)
         assertNotEquals(0, fullBatteryColor)
 
-        // Low battery should be predominantly reddish (high red component)
+        // Low battery should be reddish (high red component)
         val redComp = (lowBatteryColor shr 16) and 0xFF
         val blueComp = lowBatteryColor and 0xFF
         assertTrue(redComp > blueComp)

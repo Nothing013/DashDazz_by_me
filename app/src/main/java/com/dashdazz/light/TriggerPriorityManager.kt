@@ -1,7 +1,5 @@
 package com.dashdazz.light
 
-import android.util.Log
-
 /**
  * Non-Blocking Priority Manager for concurrent DashDazz triggers.
  *
@@ -22,6 +20,22 @@ class TriggerPriorityManager(
 ) {
     companion object {
         private const val TAG = "TriggerPriority"
+
+        private fun logD(tag: String, msg: String) {
+            try {
+                android.util.Log.d(tag, msg)
+            } catch (_: Throwable) {
+                // Ignore in local JVM unit test environment
+            }
+        }
+
+        private fun logI(tag: String, msg: String) {
+            try {
+                android.util.Log.i(tag, msg)
+            } catch (_: Throwable) {
+                // Ignore in local JVM unit test environment
+            }
+        }
     }
 
     enum class TriggerType(val priority: Int) {
@@ -54,16 +68,16 @@ class TriggerPriorityManager(
         val previousActive = resolveActiveTrigger()
         if (active) {
             activeTriggers[type] = payload ?: TriggerPayload()
-            Log.d(TAG, "Trigger ACTIVATED: $type (prio=${type.priority}) | tag=${payload?.tag}")
+            logD(TAG, "Trigger ACTIVATED: $type (prio=${type.priority}) | tag=${payload?.tag}")
         } else {
             activeTriggers.remove(type)
-            Log.d(TAG, "Trigger DEACTIVATED: $type (prio=${type.priority})")
+            logD(TAG, "Trigger DEACTIVATED: $type (prio=${type.priority})")
         }
 
         val newActive = resolveActiveTrigger()
         if (newActive != previousActive) {
             val activePayload = newActive?.let { activeTriggers[it] }
-            Log.i(TAG, "Active trigger transitioned: $previousActive -> $newActive")
+            logI(TAG, "Active trigger transitioned: $previousActive -> $newActive")
             onTriggerChanged(newActive, activePayload)
         }
         return newActive

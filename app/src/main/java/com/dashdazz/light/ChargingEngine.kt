@@ -3,9 +3,7 @@ package com.dashdazz.light
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Color
 import android.os.BatteryManager
-import android.util.Log
 
 /**
  * Task 4: Advanced Charging & Battery Indicator Engine.
@@ -21,8 +19,6 @@ import android.util.Log
  * - Zero CPU waste: updates strictly on battery change events and frame render clocks.
  */
 object ChargingEngine {
-    private const val TAG = "ChargingEngine"
-
     const val STYLE_BREATHE = 0
     const val STYLE_GAUGE = 1
     const val STYLE_GRADIENT = 2
@@ -51,7 +47,6 @@ object ChargingEngine {
         val isLow = pct <= 15 && !isCharging
 
         val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
-        // Check for Fast/Warp charge (e.g. AC charging or higher current)
         val isFast = plugged == BatteryManager.BATTERY_PLUGGED_AC
 
         return BatteryState(
@@ -70,31 +65,48 @@ object ChargingEngine {
         return evaluateBatteryIntent(batteryStatus)
     }
 
+    fun interpolateRgb(c1: Int, c2: Int, ratio: Float): Int {
+        val t = ratio.coerceIn(0f, 1f)
+        val r1 = (c1 shr 16) and 0xFF
+        val g1 = (c1 shr 8) and 0xFF
+        val b1 = c1 and 0xFF
+
+        val r2 = (c2 shr 16) and 0xFF
+        val g2 = (c2 shr 8) and 0xFF
+        val b2 = c2 and 0xFF
+
+        val r = (r1 + (r2 - r1) * t).toInt().coerceIn(0, 255)
+        val g = (g1 + (g2 - g1) * t).toInt().coerceIn(0, 255)
+        val b = (b1 + (b2 - b1) * t).toInt().coerceIn(0, 255)
+
+        return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
     /**
      * Maps battery percentage to a dynamic gradient color:
-     * 0-25%: Pure Red (0xFFFF1744) -> Deep Orange
-     * 25-60%: Amber / Yellow (0xFFFFB300)
-     * 60-95%: Cyan (0xFF00E5FF)
-     * 95-100%: Electric Neon Green (0xFF00E676)
+     * 0-25%: Pure Red (0xFFFF1744) -> Deep Orange (0xFFFF6D00)
+     * 25-60%: Amber / Yellow (0xFFFFD600)
+     * 60-90%: Cyan (0xFF00E5FF)
+     * 90-100%: Electric Neon Green (0xFF00E676)
      */
     fun getGradientColorForPercentage(percentage: Int): Int {
         val pct = percentage.coerceIn(0, 100)
         return when {
             pct < 25 -> {
                 val ratio = pct / 25f
-                Palettes.interpolate(0xFFFF1744.toInt(), 0xFFFF6D00.toInt(), ratio, 1.0f)
+                interpolateRgb(0xFFFF1744.toInt(), 0xFFFF6D00.toInt(), ratio)
             }
             pct < 60 -> {
                 val ratio = (pct - 25) / 35f
-                Palettes.interpolate(0xFFFF6D00.toInt(), 0xFFFFD600.toInt(), ratio, 1.0f)
+                interpolateRgb(0xFFFF6D00.toInt(), 0xFFFFD600.toInt(), ratio)
             }
             pct < 90 -> {
                 val ratio = (pct - 60) / 30f
-                Palettes.interpolate(0xFFFFD600.toInt(), 0xFF00E5FF.toInt(), ratio, 1.0f)
+                interpolateRgb(0xFFFFD600.toInt(), 0xFF00E5FF.toInt(), ratio)
             }
             else -> {
                 val ratio = (pct - 90) / 10f
-                Palettes.interpolate(0xFF00E5FF.toInt(), 0xFF00E676.toInt(), ratio, 1.0f)
+                interpolateRgb(0xFF00E5FF.toInt(), 0xFF00E676.toInt(), ratio)
             }
         }
     }
